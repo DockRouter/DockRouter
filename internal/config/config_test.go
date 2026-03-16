@@ -1312,3 +1312,164 @@ func TestFlagSetParseEmptyFlag(t *testing.T) {
 		t.Errorf("port = %d, want 9090", port)
 	}
 }
+
+func TestLoad(t *testing.T) {
+	// Save original os.Args
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	// Set os.Args to not trigger help/version
+	os.Args = []string{"dockrouter"}
+
+	cfg, err := Load("test-version", "test-build-time")
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if cfg == nil {
+		t.Fatal("Load returned nil config")
+	}
+
+	// Check version and build time are set
+	if cfg.Version != "test-version" {
+		t.Errorf("Version = %s, want test-version", cfg.Version)
+	}
+	if cfg.BuildTime != "test-build-time" {
+		t.Errorf("BuildTime = %s, want test-build-time", cfg.BuildTime)
+	}
+
+	// Check defaults are applied
+	if cfg.HTTPPort != DefaultHTTPPort {
+		t.Errorf("HTTPPort = %d, want %d", cfg.HTTPPort, DefaultHTTPPort)
+	}
+}
+
+func TestLoadWithEnvVars(t *testing.T) {
+	// Save original os.Args
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	// Set env vars
+	os.Setenv("DR_HTTP_PORT", "9999")
+	os.Setenv("DR_LOG_LEVEL", "debug")
+	defer func() {
+		os.Unsetenv("DR_HTTP_PORT")
+		os.Unsetenv("DR_LOG_LEVEL")
+	}()
+
+	os.Args = []string{"dockrouter"}
+
+	cfg, err := Load("1.0.0", "now")
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if cfg.HTTPPort != 9999 {
+		t.Errorf("HTTPPort = %d, want 9999", cfg.HTTPPort)
+	}
+	if cfg.LogLevel != "debug" {
+		t.Errorf("LogLevel = %s, want debug", cfg.LogLevel)
+	}
+}
+
+func TestLoadInvalidValidation(t *testing.T) {
+	// Save original os.Args
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	// Set env vars that will cause validation to fail
+	os.Setenv("DR_LOG_LEVEL", "invalid-level")
+	defer os.Unsetenv("DR_LOG_LEVEL")
+
+	os.Args = []string{"dockrouter"}
+
+	cfg, err := Load("1.0.0", "now")
+	if err == nil {
+		t.Error("Load should return error for invalid config")
+	}
+	_ = cfg
+}
+
+func TestParseFlagsWithArgs(t *testing.T) {
+	// Save original os.Args
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	// Set args with custom values (no --help or --version)
+	os.Args = []string{"dockrouter", "-http-port", "8888", "-log-level", "warn"}
+
+	cfg := &Config{}
+	cfg.applyDefaults()
+
+	err := cfg.parseFlags()
+	if err != nil {
+		t.Fatalf("parseFlags failed: %v", err)
+	}
+
+	if cfg.HTTPPort != 8888 {
+		t.Errorf("HTTPPort = %d, want 8888", cfg.HTTPPort)
+	}
+	if cfg.LogLevel != "warn" {
+		t.Errorf("LogLevel = %s, want warn", cfg.LogLevel)
+	}
+}
+
+func TestParseFlagsInvalidPort(t *testing.T) {
+	// Save original os.Args
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	// Set args with invalid port value
+	os.Args = []string{"dockrouter", "-http-port", "not-a-number"}
+
+	cfg := &Config{}
+	cfg.applyDefaults()
+
+	err := cfg.parseFlags()
+	if err == nil {
+		t.Error("parseFlags should return error for invalid port")
+	}
+}
+
+func TestParseFlagsDuration(t *testing.T) {
+	// Save original os.Args
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	os.Args = []string{"dockrouter", "-poll-interval", "30s"}
+
+	cfg := &Config{}
+	cfg.applyDefaults()
+
+	err := cfg.parseFlags()
+	if err != nil {
+		t.Fatalf("parseFlags failed: %v", err)
+	}
+
+	if cfg.PollInterval != 30*time.Second {
+		t.Errorf("PollInterval = %v, want 30s", cfg.PollInterval)
+	}
+}
+
+func TestParseFlagsStringSlice(t *testing.T) {
+	// Save original os.Args
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	os.Args = []string{"dockrouter", "-trusted-ips", "10.0.0.1,10.0.0.2"}
+
+	cfg := &Config{}
+	cfg.applyDefaults()
+
+	err := cfg.parseFlags()
+	if err != nil {
+		t.Fatalf("parseFlags failed: %v", err)
+	}
+
+	if len(cfg.TrustedIPs) != 2 {
+		t.Errorf("TrustedIPs len = %d, want 2", len(cfg.TrustedIPs))
+	}
+	if cfg.TrustedIPs[0] != "10.0.0.1" || cfg.TrustedIPs[1] != "10.0.0.2" {
+		t.Errorf("TrustedIPs = %v, want [10.0.0.1 10.0.0.2]", cfg.TrustedIPs)
+	}
+}

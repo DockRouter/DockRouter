@@ -1,0 +1,61 @@
+# TLS Auto Example - Automatic Let's Encrypt certificates
+#
+# This example shows how to set up automatic TLS with Let's Encrypt.
+# Make sure to use real domains that point to your server.
+#
+# IMPORTANT:
+#   - Replace example.com with your actual domain
+#   - Set DR_ACME_EMAIL to your email address
+#   - Ensure ports 80 and 443 are accessible from the internet
+#
+# Usage:
+#   export DR_ACME_EMAIL=your-email@example.com
+#   docker-compose up -d
+
+version: "3.8"
+
+services:
+  dockrouter:
+    image: dockrouter/dockrouter:latest
+    container_name: dockrouter
+    ports:
+      - "80:80"
+      - "443:443"
+      - "9090:9090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - dockrouter-data:/data
+    environment:
+      - DR_ACME_EMAIL=${DR_ACME_EMAIL:-admin@example.com}
+      - DR_LOG_LEVEL=info
+    restart: unless-stopped
+
+  # Website with automatic TLS
+  website:
+    image: nginx:alpine
+    labels:
+      dr.enable: "true"
+      dr.host: "www.example.com"
+      dr.tls: "auto"
+      dr.tls.domains: "example.com,www.example.com"
+    volumes:
+      - ./html:/usr/share/nginx/html:ro
+    restart: unless-stopped
+
+  # API with automatic TLS
+  api:
+    image: node:alpine
+    labels:
+      dr.enable: "true"
+      dr.host: "api.example.com"
+      dr.tls: "auto"
+      dr.cors.origins: "https://www.example.com"
+      dr.ratelimit: "100/m"
+    working_dir: /app
+    volumes:
+      - ./api:/app
+    command: npm start
+    restart: unless-stopped
+
+volumes:
+  dockrouter-data:

@@ -355,3 +355,64 @@ func BenchmarkHTTPCheck(b *testing.B) {
 		HTTPCheck("localhost:18085", "/", 1*time.Second)
 	}
 }
+
+func TestTCPCheck(t *testing.T) {
+	// Start a simple TCP listener
+	ln, err := net.Listen("tcp", ":18086")
+	if err != nil {
+		t.Skipf("Cannot start test listener: %v", err)
+	}
+	defer ln.Close()
+
+	// Accept connections in background
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			conn.Close()
+		}
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Test successful TCP check
+	healthy, err := TCPCheck("localhost:18086", 2*time.Second)
+	if err != nil {
+		t.Fatalf("TCPCheck failed: %v", err)
+	}
+	if !healthy {
+		t.Error("Expected healthy=true for listening port")
+	}
+}
+
+func TestTCPCheckConnectionRefused(t *testing.T) {
+	// Test with a port that's not listening
+	healthy, err := TCPCheck("localhost:59998", 1*time.Second)
+	if err == nil {
+		t.Error("Expected connection refused error")
+	}
+	if healthy {
+		t.Error("Expected healthy=false on connection refused")
+	}
+}
+
+func TestTCPCheckTimeout(t *testing.T) {
+	// Start a listener that doesn't accept connections quickly
+	ln, err := net.Listen("tcp", ":18087")
+	if err != nil {
+		t.Skipf("Cannot start test listener: %v", err)
+	}
+	defer ln.Close()
+
+	// Don't accept connections - just hold the port
+
+	// Test with very short timeout - the connection should succeed
+	// because the listener accepts the connection at the TCP level
+	healthy, err := TCPCheck("localhost:18087", 1*time.Second)
+	if err != nil {
+		t.Logf("TCPCheck error (may be expected): %v", err)
+	}
+	_ = healthy // Result depends on whether connection was accepted
+}

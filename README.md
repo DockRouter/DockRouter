@@ -1,38 +1,72 @@
-# DockRouter
+# 🚢 DockRouter
 
 **Zero-dependency, single-binary Docker-native ingress router with automatic TLS.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://golang.org/dl/)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker)](https://hub.docker.com/r/dockrouter/dockrouter)
+[![GitHub Release](https://img.shields.io/github/v/release/DockRouter/dockrouter?include_prereleases)](https://github.com/DockRouter/dockrouter/releases)
 
-## Features
+---
 
-- **Zero external dependencies** — Pure Go stdlib, no external packages
-- **Automatic TLS** — Let's Encrypt HTTP-01 challenge built-in
-- **Label-based discovery** — Configure routing via Docker labels
-- **Single binary** — <10MB, runs anywhere
-- **Built-in dashboard** — Admin UI on port 9090
-- **Hot reload** — Routes update instantly when containers start/stop
-- **Production-ready** — Rate limiting, health checks, circuit breaker, CORS
-- **WebSocket support** — Transparent WebSocket proxying
+## ✨ Features
 
-## Quick Start
+- **🚀 Zero external dependencies** — Pure Go stdlib, no external packages
+- **🔒 Automatic TLS** — Let's Encrypt HTTP-01 challenge built-in
+- **🏷️ Label-based discovery** — Configure routing via Docker labels
+- **📦 Single binary** — <10MB, runs anywhere
+- **🎛️ Built-in dashboard** — Admin UI on port 9090
+- **🔥 Hot reload** — Routes update instantly when containers start/stop
+- **🛡️ Production-ready** — Rate limiting, health checks, circuit breaker, CORS
+- **🔌 WebSocket support** — Transparent WebSocket proxying
+- **📊 Prometheus metrics** — Built-in metrics endpoint
+
+---
+
+## 🚀 Quick Start
+
+### Option 1: Docker (Recommended)
 
 ```bash
-# Run with Docker
 docker run -d \
   --name dockrouter \
   -p 80:80 -p 443:443 -p 9090:9090 \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
   -v dockrouter-data:/data \
   -e DR_ACME_EMAIL=you@example.com \
-  dockrouter:latest
+  dockrouter/dockrouter:latest
 ```
 
-## Configuration via Labels
+### Option 2: Docker Compose
+
+```bash
+git clone https://github.com/DockRouter/dockrouter.git
+cd dockrouter
+docker-compose up -d
+```
+
+### Option 3: Binary Download
+
+```bash
+# Linux/macOS
+curl -sL https://github.com/DockRouter/dockrouter/releases/latest/download/dockrouter-$(uname -s)-$(uname -m) -o dockrouter
+chmod +x dockrouter
+sudo ./dockrouter --docker-socket /var/run/docker.sock
+
+# Or with automatic installation
+curl -sL https://raw.githubusercontent.com/DockRouter/dockrouter/main/install.sh | bash
+```
+
+---
+
+## 📖 Usage
+
+### Basic Example
 
 Add labels to your containers:
 
 ```yaml
+# docker-compose.yml
 services:
   api:
     image: myapp/api
@@ -40,11 +74,68 @@ services:
       dr.enable: "true"
       dr.host: "api.example.com"
       dr.tls: "auto"
-      dr.ratelimit: "100/m"
-      dr.cors.origins: "https://app.example.com"
 ```
 
-## Label Reference
+```bash
+# Or with docker run
+docker run -d \
+  --label dr.enable=true \
+  --label dr.host=api.example.com \
+  --label dr.tls=auto \
+  myapp/api
+```
+
+### Complete Docker Compose Example
+
+```yaml
+version: "3.8"
+
+services:
+  # DockRouter - The ingress router
+  dockrouter:
+    image: dockrouter/dockrouter:latest
+    container_name: dockrouter
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "9090:9090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - dockrouter-data:/data
+    environment:
+      - DR_ACME_EMAIL=admin@example.com
+      - DR_LOG_LEVEL=info
+    labels:
+      - "com.dockrouter.description=Ingress Router"
+
+  # Example API Service
+  api:
+    image: nginx:alpine
+    labels:
+      dr.enable: "true"
+      dr.host: "api.example.com"
+      dr.tls: "auto"
+      dr.healthcheck.path: "/health"
+      dr.ratelimit: "100/m"
+
+  # Example Web Service
+  web:
+    image: nginx:alpine
+    labels:
+      dr.enable: "true"
+      dr.host: "www.example.com"
+      dr.tls: "auto"
+      dr.cors.origins: "https://example.com"
+      dr.compress: "true"
+
+volumes:
+  dockrouter-data:
+```
+
+---
+
+## 🏷️ Label Reference
 
 ### Required Labels
 
@@ -100,7 +191,11 @@ services:
 | `dr.healthcheck.timeout` | `5s` | Check timeout |
 | `dr.healthcheck.threshold` | `3` | Failures before unhealthy |
 
-## Environment Variables
+---
+
+## ⚙️ Configuration
+
+### Environment Variables
 
 All configuration can be set via environment variables with `DR_` prefix:
 
@@ -112,6 +207,7 @@ All configuration can be set via environment variables with `DR_` prefix:
 | `DR_ADMIN_BIND` | `127.0.0.1` | Admin bind address |
 | `DR_ADMIN_USER` | — | Admin username |
 | `DR_ADMIN_PASS` | — | Admin password |
+| `DR_ADMIN` | `true` | Enable admin interface |
 | `DR_DOCKER_SOCKET` | `/var/run/docker.sock` | Docker socket path |
 | `DR_DATA_DIR` | `/data` | Data directory |
 | `DR_ACME_EMAIL` | — | ACME account email |
@@ -120,7 +216,7 @@ All configuration can be set via environment variables with `DR_` prefix:
 | `DR_LOG_LEVEL` | `info` | Log level |
 | `DR_ACCESS_LOG` | `true` | Enable access logging |
 
-## CLI Flags
+### CLI Flags
 
 Same options available as CLI flags:
 
@@ -128,49 +224,143 @@ Same options available as CLI flags:
 dockrouter --http-port=8080 --https-port=8443 --acme-email=you@example.com
 ```
 
-## Docker Compose Example
+---
+
+## 🔒 TLS Configuration
+
+### Auto TLS (Let's Encrypt)
 
 ```yaml
-version: "3.8"
-
-services:
-  dockrouter:
-    image: dockrouter:latest
-    ports:
-      - "80:80"
-      - "443:443"
-      - "9090:9090"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - dockrouter-data:/data
-    environment:
-      - DR_ACME_EMAIL=admin@example.com
-
-  api:
-    image: myapp/api
-    labels:
-      dr.enable: "true"
-      dr.host: "api.example.com"
-      dr.tls: "auto"
-
-  web:
-    image: myapp/web
-    labels:
-      dr.enable: "true"
-      dr.host: "www.example.com"
-      dr.tls: "auto"
+labels:
+  dr.enable: "true"
+  dr.host: "api.example.com"
+  dr.tls: "auto"
+  dr.tls.domains: "api.example.com,www.example.com"
 ```
 
-## Admin Dashboard
+Set ACME email:
+```bash
+docker run -e DR_ACME_EMAIL=admin@example.com dockrouter/dockrouter
+```
 
-Access the admin dashboard at `http://localhost:9090`
+### Manual TLS
 
-- View all routes and their status
-- Monitor certificates and expiry
-- View discovered containers
-- Real-time metrics
+```yaml
+labels:
+  dr.enable: "true"
+  dr.host: "api.example.com"
+  dr.tls: "manual"
+```
 
-## Architecture
+Mount certificates:
+```bash
+docker run -v /path/to/certs:/certs:ro dockrouter/dockrouter
+```
+
+Certificate structure:
+```
+/certs/
+├── api.example.com/
+│   ├── cert.pem
+│   └── key.pem
+```
+
+---
+
+## 📊 Monitoring
+
+### Health Endpoints
+
+```bash
+# Health check
+curl http://localhost:9090/health
+
+# Readiness check
+curl http://localhost:9090/ready
+```
+
+### Prometheus Metrics
+
+```bash
+curl http://localhost:9090/metrics
+```
+
+Available metrics:
+- `dockrouter_requests_total` - Total requests
+- `dockrouter_request_duration_seconds` - Request latency
+- `dockrouter_active_connections` - Active connections
+- `dockrouter_backend_requests_total` - Backend requests
+- `dockrouter_backend_errors_total` - Backend errors
+- `dockrouter_certificates_total` - Total certificates
+- `dockrouter_containers_total` - Discovered containers
+
+### Admin API
+
+```bash
+# List routes
+curl http://localhost:9090/api/v1/routes
+
+# List containers
+curl http://localhost:9090/api/v1/containers
+
+# List certificates
+curl http://localhost:9090/api/v1/certificates
+
+# Get status
+curl http://localhost:9090/api/v1/status
+
+# Get config
+curl http://localhost:9090/api/v1/config
+
+# Get metrics
+curl http://localhost:9090/api/v1/metrics
+```
+
+---
+
+## 🛡️ Security Features
+
+### IP Filtering
+
+```yaml
+labels:
+  dr.ipwhitelist: "192.168.0.0/16,10.0.0.0/8"
+  dr.ipblacklist: "192.168.100.1/32"
+```
+
+### CORS
+
+```yaml
+labels:
+  dr.cors.origins: "https://example.com,https://app.example.com"
+  dr.cors.methods: "GET,POST,PUT,DELETE"
+```
+
+### Rate Limiting
+
+```yaml
+labels:
+  dr.ratelimit: "100/m"
+  dr.ratelimit.by: "client_ip"
+```
+
+### Circuit Breaker
+
+```yaml
+labels:
+  dr.circuitbreaker: "5/30s"  # Open after 5 failures in 30s
+```
+
+### Basic Auth
+
+```yaml
+labels:
+  dr.auth.basic.users: "admin:$2a$10$N9qo8uLOickgx2ZMRZoMy..."
+```
+
+---
+
+## 🏗️ Architecture
 
 ```
                     ┌─────────────────────────────────────┐
@@ -184,30 +374,98 @@ Access the admin dashboard at `http://localhost:9090`
                              /var/run/docker.sock
 ```
 
-## Building
+---
+
+## 🔧 Development
+
+### Prerequisites
+
+- Go 1.21+
+- Docker & Docker Compose
+- Make (optional)
+
+### Build from Source
 
 ```bash
+# Clone
+git clone https://github.com/DockRouter/dockrouter.git
+cd dockrouter
+
 # Build
+go build -o dockrouter ./cmd/dockrouter
+
+# Or use Make
 make build
 
-# Build for all platforms
-make build-all
-
-# Docker build
-make docker
-```
-
-## Development
-
-```bash
 # Run tests
 make test
 
+# Run with coverage
+make test-coverage
+
 # Run locally
-./bin/dockrouter --acme-email=test@example.com --log-level=debug
+make run
 ```
 
-## Comparison
+### Docker Build
+
+```bash
+# Build Docker image
+docker build -t dockrouter:dev .
+
+# Run locally
+docker run -d \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  -p 80:80 -p 443:443 -p 9090:9090 \
+  dockrouter:dev
+```
+
+---
+
+## 📁 Project Structure
+
+```
+dockrouter/
+├── cmd/dockrouter/          # Main application
+│   ├── main.go              # Entry point
+│   └── dashboard/           # Admin dashboard
+├── internal/
+│   ├── admin/               # Admin server (100% test coverage)
+│   ├── config/              # Configuration
+│   ├── discovery/           # Docker discovery
+│   ├── health/              # Health checking
+│   ├── log/                 # Logging
+│   ├── metrics/             # Prometheus metrics
+│   ├── middleware/          # HTTP middleware
+│   ├── proxy/               # Reverse proxy
+│   ├── router/              # Route management
+│   └── tls/                 # TLS/ACME
+├── examples/                # Example configurations
+├── scripts/                 # Build scripts
+├── Dockerfile               # Multi-stage Docker build
+├── docker-compose.yml       # Quick start compose file
+├── Makefile                 # Build automation
+└── README.md                # This file
+```
+
+---
+
+## 📝 Examples
+
+See [examples/](./examples/) directory:
+
+| Example | Description |
+|---------|-------------|
+| [basic](./examples/basic/) | Simple HTTP routing |
+| [tls-auto](./examples/tls-auto/) | Auto TLS with Let's Encrypt |
+| [multi-app](./examples/multi-app/) | Multiple applications |
+| [microservices](./examples/microservices/) | Microservices architecture |
+| [websocket](./examples/websocket/) | WebSocket proxying |
+| [rate-limiting](./examples/rate-limiting/) | Rate limiting examples |
+
+---
+
+## 🆚 Comparison
 
 | Feature | DockRouter | Traefik | Caddy | Nginx |
 |---------|------------|---------|-------|-------|
@@ -218,7 +476,39 @@ make test
 | Built-in dashboard | ✅ | ✅ | ❌ | ❌ |
 | No config files | ✅ | ❌ | ❌ | ❌ |
 | Label-based config | ✅ | ✅ | ❌ | ❌ |
+| <10MB binary | ✅ | ❌ | ❌ | ❌ |
 
-## License
+---
 
-MIT License - see [LICENSE](LICENSE)
+## 🤝 Contributing
+
+Contributions are welcome!
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+---
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) file.
+
+---
+
+## 📞 Support
+
+- **Issues**: [GitHub Issues](https://github.com/DockRouter/dockrouter/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/DockRouter/dockrouter/discussions)
+
+---
+
+## 🙏 Acknowledgments
+
+- Built with ❤️ using Go
+- Inspired by Traefik and Nginx Proxy Manager
+- Powered by Docker

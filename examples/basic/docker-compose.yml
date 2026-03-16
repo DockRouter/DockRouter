@@ -1,0 +1,33 @@
+# Basic Example - Simple HTTP routing
+#
+# This example shows the minimal setup for DockRouter
+# with a single backend service.
+#
+# Usage:
+#   docker-compose up -d
+#   curl http://api.example.local (add to /etc/hosts: 127.0.0.1 api.example.local)
+
+version: "3.8"
+
+services:
+  dockrouter:
+    image: dockrouter/dockrouter:latest
+    container_name: dockrouter
+    ports:
+      - "80:80"
+      - "9090:9090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - DR_LOG_LEVEL=debug
+    restart: unless-stopped
+
+  # Simple backend service
+  api:
+    image: hashicorp/http-echo:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "api.example.local"
+      dr.port: "5678"
+    command: ["-text=Hello from DockRouter!"]
+    restart: unless-stopped

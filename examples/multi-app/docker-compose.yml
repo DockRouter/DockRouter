@@ -1,0 +1,157 @@
+# Multi-App Example - Multiple applications with various features
+#
+# This example demonstrates DockRouter with multiple applications,
+# showing various features like path-based routing, rate limiting,
+# CORS, basic auth, and more.
+#
+# Usage:
+#   Add to /etc/hosts:
+#     127.0.0.1 api.example.local app.example.local admin.example.local
+#   docker-compose up -d
+
+version: "3.8"
+
+services:
+  dockrouter:
+    image: dockrouter/dockrouter:latest
+    container_name: dockrouter
+    ports:
+      - "80:80"
+      - "443:443"
+      - "9090:9090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - dockrouter-data:/data
+    environment:
+      - DR_LOG_LEVEL=info
+      - DR_ACCESS_LOG=true
+    restart: unless-stopped
+    labels:
+      - "com.dockrouter.description=Ingress Router"
+
+  # Main API service
+  api:
+    image: hashicorp/http-echo:latest
+    container_name: api-example
+    labels:
+      dr.enable: "true"
+      dr.host: "api.example.local"
+      dr.port: "5678"
+      dr.ratelimit: "100/m"
+      dr.cors.origins: "*"
+      dr.compress: "true"
+    command: ["-text={\"message\":\"API Response\",\"service\":\"api\"}"]
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # Web application
+  webapp:
+    image: hashicorp/http-echo:latest
+    container_name: webapp-example
+    labels:
+      dr.enable: "true"
+      dr.host: "app.example.local"
+      dr.port: "5678"
+      dr.compress: "true"
+      dr.cors.origins: "https://example.com"
+    command: ["-text=<html><body><h1>Web App</h1><p>Served by DockRouter</p></body></html>"]
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # Admin panel with basic auth
+  admin:
+    image: hashicorp/http-echo:latest
+    container_name: admin-example
+    labels:
+      dr.enable: "true"
+      dr.host: "admin.example.local"
+      dr.port: "5678"
+      # Basic auth: username=admin, password=secret123
+      # Generate with: htpasswd -nbB admin secret123
+      dr.auth.basic.users: "admin:$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZRGdjGj/n3ySBKfP0rqOqUHZqvEqK"
+      dr.ipwhitelist: "127.0.0.1/8,192.168.0.0/16"
+    command: ["-text=<html><body><h1>Admin Panel</h1><p>Protected by basic auth</p></body></html>"]
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # Blog with path-based routing
+  blog:
+    image: hashicorp/http-echo:latest
+    container_name: blog-example
+    labels:
+      dr.enable: "true"
+      dr.host: "example.local"
+      dr.path: "/blog"
+      dr.port: "5678"
+      dr.stripprefix: "/blog"
+    command: ["-text=<html><body><h1>Blog</h1><p>Path-based routing works!</p></body></html>"]
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # API v1 with path-based routing
+  api-v1:
+    image: hashicorp/http-echo:latest
+    container_name: api-v1-example
+    labels:
+      dr.enable: "true"
+      dr.host: "example.local"
+      dr.path: "/api/v1"
+      dr.port: "5678"
+      dr.stripprefix: "/api/v1"
+      dr.ratelimit: "50/m"
+    command: ["-text={\"version\":\"v1\",\"message\":\"API v1\"}"]
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # API v2 with path-based routing
+  api-v2:
+    image: hashicorp/http-echo:latest
+    container_name: api-v2-example
+    labels:
+      dr.enable: "true"
+      dr.host: "example.local"
+      dr.path: "/api/v2"
+      dr.port: "5678"
+      dr.stripprefix: "/api/v2"
+      dr.ratelimit: "50/m"
+    command: ["-text={\"version\":\"v2\",\"message\":\"API v2\"}"]
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # Rate-limited service
+  limited:
+    image: hashicorp/http-echo:latest
+    container_name: limited-example
+    labels:
+      dr.enable: "true"
+      dr.host: "limited.example.local"
+      dr.port: "5678"
+      dr.ratelimit: "10/m"
+      dr.ratelimit.by: "client_ip"
+    command: ["-text={\"message\":\"Rate limited: max 10 requests per minute per IP\"}"]
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # Internal service (NOT exposed by DockRouter)
+  internal:
+    image: hashicorp/http-echo:latest
+    container_name: internal-example
+    # No dr.enable label - won't be routed
+    command: ["-text=Internal service - not accessible via DockRouter"]
+    networks:
+      - backend
+    restart: unless-stopped
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  dockrouter-data:
