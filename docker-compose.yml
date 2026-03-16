@@ -1,0 +1,105 @@
+version: "3.8"
+
+services:
+  # DockRouter - Main ingress controller
+  dockrouter:
+    build: .
+    image: dockrouter:latest
+    container_name: dockrouter
+    ports:
+      - "80:80"
+      - "443:443"
+      - "9090:9090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - dockrouter-data:/data
+    environment:
+      - DR_ACME_EMAIL=admin@example.com
+      - DR_ADMIN_USER=admin
+      - DR_ADMIN_PASS=changeme
+      - DR_LOG_LEVEL=info
+    networks:
+      - web
+    restart: unless-stopped
+
+  # Example API service
+  api:
+    image: hashicorp/http-echo:latest
+    container_name: api-example
+    labels:
+      dr.enable: "true"
+      dr.host: "api.example.local"
+      dr.port: "5678"
+      dr.tls: "auto"
+      dr.ratelimit: "100/m"
+      dr.cors.origins: "*"
+      dr.compress: "true"
+      dr.healthcheck.path: "/"
+    command: ["-text=Hello from API! This is DockRouter routing."]
+    networks:
+      - web
+
+  # Example frontend service
+  frontend:
+    image: hashicorp/http-echo:latest
+    container_name: frontend-example
+    labels:
+      dr.enable: "true"
+      dr.host: "app.example.local"
+      dr.port: "5678"
+      dr.tls: "auto"
+      dr.compress: "true"
+    command: ["-text=Hello from Frontend! Powered by DockRouter."]
+    networks:
+      - web
+
+  # Example blog with path-based routing
+  blog:
+    image: hashicorp/http-echo:latest
+    container_name: blog-example
+    labels:
+      dr.enable: "true"
+      dr.host: "example.local"
+      dr.path: "/blog"
+      dr.port: "5678"
+      dr.tls: "auto"
+      dr.stripprefix: "/blog"
+    command: ["-text=Blog section. Path-based routing works!"]
+    networks:
+      - web
+
+  # Example with basic auth
+  admin-panel:
+    image: hashicorp/http-echo:latest
+    container_name: admin-example
+    labels:
+      dr.enable: "true"
+      dr.host: "admin.example.local"
+      dr.port: "5678"
+      dr.tls: "auto"
+      dr.auth.basic.users: "admin:$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZRGdjGj/n3ySBKfP0rqOqUHZqvEqK"
+      # Password is 'password123' - generate with: htpasswd -nbB admin password123
+    command: ["-text=Admin panel - Basic auth protected!"]
+    networks:
+      - web
+
+  # Example with rate limiting
+  api-limited:
+    image: hashicorp/http-echo:latest
+    container_name: api-limited-example
+    labels:
+      dr.enable: "true"
+      dr.host: "limited.example.local"
+      dr.port: "5678"
+      dr.tls: "auto"
+      dr.ratelimit: "10/m"
+    command: ["-text=Rate limited API - max 10 requests per minute per IP"]
+    networks:
+      - web
+
+volumes:
+  dockrouter-data:
+
+networks:
+  web:
+    driver: bridge

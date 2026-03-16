@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DockRouter Admin</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <header>
+        <h1>DockRouter</h1>
+        <nav>
+            <a href="#overview">Overview</a>
+            <a href="#routes">Routes</a>
+            <a href="#certificates">Certificates</a>
+            <a href="#containers">Containers</a>
+            <a href="#logs">Logs</a>
+        </nav>
+    </header>
+
+    <main id="content">
+        <section id="overview">
+            <h2>Overview</h2>
+            <div class="stats">
+                <div class="stat">
+                    <span class="value" id="routes-count">-</span>
+                    <span class="label">Active Routes</span>
+                </div>
+                <div class="stat">
+                    <span class="value" id="containers-count">-</span>
+                    <span class="label">Containers</span>
+                </div>
+                <div class="stat">
+                    <span class="value" id="certs-count">-</span>
+                    <span class="label">Certificates</span>
+                </div>
+                <div class="stat">
+                    <span class="value" id="uptime">-</span>
+                    <span class="label">Uptime</span>
+                </div>
+            </div>
+        </section>
+
+        <section id="routes">
+            <h2>Routes</h2>
+            <table id="routes-table">
+                <thead>
+                    <tr>
+                        <th>Host</th>
+                        <th>Path</th>
+                        <th>Backend</th>
+                        <th>TLS</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </section>
+
+        <section id="certificates">
+            <h2>Certificates</h2>
+            <table id="certs-table">
+                <thead>
+                    <tr>
+                        <th>Domain</th>
+                        <th>Issuer</th>
+                        <th>Expires</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </section>
+
+        <section id="containers">
+            <h2>Containers</h2>
+            <table id="containers-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Image</th>
+                        <th>Status</th>
+                        <th>Labels</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </section>
+
+        <section id="logs">
+            <h2>Logs</h2>
+            <pre id="log-output"></pre>
+        </section>
+    </main>
+
+    <footer>
+        <span id="version">DockRouter v0.0.0</span>
+    </footer>
+
+    <script src="/app.js"></script>
+</body>
+</html>
