@@ -1,0 +1,41 @@
+# Binaries
+bin/
+*.exe
+dockrouter
+dockrouter-*
+
+# Tests
+*_test.go
+tests/
+
+# Documentation
+*.md
+!README.md
+SPECIFICATION.md
+IMPLEMENTATION.md
+TASKS.md
+BRANDING.md
+
+# Examples
+examples/
+
+# CI/CD
+.github/
+.goreleaser.yml
+
+# IDE
+.idea/
+.vscode/
+
+# Git
+.git/
+.gitignore
+
+# Website
+website/
+
+# Development files
+.env
+*.log
+*.tmp
+coverage.*

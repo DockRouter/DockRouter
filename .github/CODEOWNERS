@@ -1,0 +1,49 @@
+# CODEOWNERS - DockRouter
+#
+# These owners will be automatically requested for review
+# when their code changes.
+#
+# For more info: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for everything
+* @dockrouter/core
+
+# Core packages
+/cmd/ @dockrouter/core
+/internal/config/ @dockrouter/core
+/internal/log/ @dockrouter/core
+
+# Docker discovery
+/internal/discovery/ @dockrouter/core
+
+# Routing
+/internal/router/ @dockrouter/core
+
+# Proxy
+/internal/proxy/ @dockrouter/core
+
+# TLS/ACME
+/internal/tls/ @dockrouter/core
+
+# Middleware
+/internal/middleware/ @dockrouter/core
+
+# Health checks
+/internal/health/ @dockrouter/core
+
+# Admin API & Dashboard
+/internal/admin/ @dockrouter/core
+/dashboard/ @dockrouter/core
+
+# Metrics
+/internal/metrics/ @dockrouter/core
+
+# CI/CD
+/.github/ @dockrouter/core
+Dockerfile @dockrouter/core
+.goreleaser.yml @dockrouter/core
+
+# Documentation
+README.md @dockrouter/core
+CONTRIBUTING.md @dockrouter/core
+CHANGELOG.md @dockrouter/core

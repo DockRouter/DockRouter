@@ -1,8 +1,47 @@
-*.out
-
+# Binaries
 *.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dockrouter
+dockrouter-*
 
+# Test coverage
+*.out
+coverage.txt
+coverage.html
+
+# Build artifacts
 *.log
 *.tmp
 *.zip
 *.tar.gz
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Development
+.env
+.env.local
+*.pem
+*.key
+/data/
+
+# Internal docs (not for public repo)
+BRANDING.md
+IMPLEMENTATION.md
+SPECIFICATION.md
+TASKS.md
+
+# Claude Code
+.claude/

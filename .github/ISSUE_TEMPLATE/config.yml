@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/DockRouter/dockrouter#readme
+    about: Check the README for usage information and label reference
+  - name: Discussions
+    url: https://github.com/DockRouter/dockrouter/discussions
+    about: Ask questions and discuss ideas with the community
+  - name: Security Issue
+    url: https://github.com/DockRouter/dockrouter/security/advisories
+    about: Report security vulnerabilities privately
