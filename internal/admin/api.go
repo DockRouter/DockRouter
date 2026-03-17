@@ -4,16 +4,20 @@ package admin
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/DockRouter/dockrouter/internal/metrics"
 )
 
 // APIHandler handles REST API requests
 type APIHandler struct {
-	// References to route table, cert manager, etc.
+	metricsCollector *metrics.Collector
 }
 
 // NewAPIHandler creates a new API handler
-func NewAPIHandler() *APIHandler {
-	return &APIHandler{}
+func NewAPIHandler(metricsCollector *metrics.Collector) *APIHandler {
+	return &APIHandler{
+		metricsCollector: metricsCollector,
+	}
 }
 
 // Routes returns the API routes
@@ -46,9 +50,11 @@ func (h *APIHandler) certificates(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode([]interface{}{})
 }
 
-func (h *APIHandler) metrics(w http.ResponseWriter, r *http.Request) {
-	// TODO: Return Prometheus format metrics
-	w.Write([]byte("# metrics placeholder\n"))
+func (h *APIHandler) metrics(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+	if h.metricsCollector != nil {
+		h.metricsCollector.PrometheusFormat(w)
+	}
 }
 
 func (h *APIHandler) health(w http.ResponseWriter, r *http.Request) {

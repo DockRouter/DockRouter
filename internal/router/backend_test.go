@@ -32,7 +32,7 @@ func TestBackendPoolSelect(t *testing.T) {
 	// Should only select healthy targets
 	selected := pool.Select("")
 	if selected == nil {
-		t.Error("Expected target, got nil")
+		t.Fatal("Expected target, got nil")
 	}
 	if !selected.Healthy {
 		t.Error("Selected unhealthy target")

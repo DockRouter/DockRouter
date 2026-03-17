@@ -37,12 +37,13 @@ func TestRadixTreeDeleteNodeWithChildren(t *testing.T) {
 	// Delete parent - should just clear route, not remove node
 	tree.Delete("/api")
 
-	// Parent route should be gone
-	route := tree.Match("/api")
-	// Note: It may fall back to root or return nil depending on tree structure
+	// Parent route should be gone (might return nil or fall back to root)
+	if route := tree.Match("/api"); route != nil && route.ID == "api" {
+		t.Error("/api route should be cleared after delete")
+	}
 
 	// Child should still exist
-	route = tree.Match("/api/v1")
+	route := tree.Match("/api/v1")
 	if route == nil || route.ID != "api-v1" {
 		t.Error("/api/v1 should still exist")
 	}
@@ -110,13 +111,13 @@ func TestRadixTreeComplexTreeStructure(t *testing.T) {
 	for i, path := range paths {
 		route := tree.Match(path)
 		if route == nil {
-			t.Errorf("Path %s should match", path)
+				t.Fatalf("Path %s should match", path)
+			}
+			expectedID := "route-" + string(rune('0'+i))
+			if route.ID != expectedID {
+				t.Errorf("Match(%s) = %s, want %s", path, route.ID, expectedID)
+		 }
 		}
-		expectedID := "route-" + string(rune('0'+i))
-		if route.ID != expectedID {
-			t.Errorf("Match(%s) = %s, want %s", path, route.ID, expectedID)
-		}
-	}
 
 	// Test partial paths
 	route := tree.Match("/api/v1/users/123")

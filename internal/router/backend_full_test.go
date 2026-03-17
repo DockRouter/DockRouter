@@ -25,7 +25,7 @@ func TestBackendPoolSelectIPHash(t *testing.T) {
 		t.Run(tt.clientIP, func(t *testing.T) {
 			selected := pool.Select(tt.clientIP)
 			if selected == nil {
-				t.Error("Select should not return nil")
+				t.Fatal("Select should not return nil")
 			}
 			// Same IP should always get same backend
 			selected2 := pool.Select(tt.clientIP)
@@ -350,7 +350,7 @@ func TestTableWildcardMatch(t *testing.T) {
 	// Test exact match returns nil (no exact route)
 	route := table.Match("sub.example.com", "/")
 	if route == nil {
-		t.Error("Should match wildcard pattern")
+		t.Fatal("Should match wildcard pattern")
 	}
 	if route.ID != "wildcard-1" {
 		t.Errorf("Route ID = %s, want wildcard-1", route.ID)

@@ -2,6 +2,7 @@
 package router
 
 import (
+	"net"
 	"sync"
 	"time"
 )
@@ -24,6 +25,64 @@ type Route struct {
 
 	// Additional fields for routing
 	Address string // Direct backend address
+
+	// Per-route middleware configuration
+	MiddlewareConfig MiddlewareConfig
+}
+
+// MiddlewareConfig holds per-route middleware settings
+type MiddlewareConfig struct {
+	// Rate limiting
+	RateLimit RateLimitConfig
+
+	// CORS
+	CORS CORSConfig
+
+	// Compression
+	Compress bool
+
+	// Path modification
+	StripPrefix string
+	AddPrefix   string
+
+	// Security
+	BasicAuthUsers []BasicAuthUser
+	IPWhitelist    []*net.IPNet
+	IPBlacklist    []*net.IPNet
+	MaxBody        int64
+
+	// Reliability
+	Retry          int
+	CircuitBreaker CircuitBreakerConfig
+}
+
+// RateLimitConfig holds rate limiting configuration
+type RateLimitConfig struct {
+	Enabled bool
+	Count   int
+	Window  time.Duration
+	ByKey   string
+}
+
+// CORSConfig holds CORS configuration
+type CORSConfig struct {
+	Enabled    bool
+	Origins    []string
+	Methods    []string
+	Headers    []string
+}
+
+// BasicAuthUser holds basic auth credentials
+type BasicAuthUser struct {
+	Username string
+	Hash     string
+}
+
+// CircuitBreakerConfig holds circuit breaker configuration
+type CircuitBreakerConfig struct {
+	Enabled  bool
+	Failures int
+	Window   time.Duration
 }
 
 // TLSConfig holds TLS-related configuration for a route

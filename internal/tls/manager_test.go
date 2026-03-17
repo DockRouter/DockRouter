@@ -155,7 +155,7 @@ func TestGenerateSelfSigned(t *testing.T) {
 	if cert == nil {
 		t.Fatal("GenerateSelfSigned returned nil certificate")
 	}
-	if cert.Certificate == nil || len(cert.Certificate) == 0 {
+	if len(cert.Certificate) == 0 {
 		t.Error("Certificate should have certificate data")
 	}
 	if cert.PrivateKey == nil {
@@ -341,21 +341,21 @@ func TestManagerGetCertificate(t *testing.T) {
 	manager := NewManager(store, nil, nil, logger)
 
 	// Test with nil ClientHelloInfo
-	cert, err := manager.GetCertificate(nil)
+	_, err := manager.GetCertificate(nil)
 	if err == nil {
 		t.Error("GetCertificate should return error for nil hello")
 	}
 
 	// Test with empty ServerName
 	hello := &tls.ClientHelloInfo{ServerName: ""}
-	cert, err = manager.GetCertificate(hello)
+	_, err = manager.GetCertificate(hello)
 	if err == nil {
 		t.Error("GetCertificate should return error for empty ServerName")
 	}
 
 	// Test with valid ServerName but no certificate
 	hello = &tls.ClientHelloInfo{ServerName: "nonexistent.com"}
-	cert, err = manager.GetCertificate(hello)
+	_, err = manager.GetCertificate(hello)
 	if err == nil {
 		t.Error("GetCertificate should return error for non-existent cert")
 	}
@@ -383,7 +383,7 @@ func TestManagerGetCertificate(t *testing.T) {
 	manager.mu.Unlock()
 
 	hello = &tls.ClientHelloInfo{ServerName: "example.com"}
-	cert, err = manager.GetCertificate(hello)
+	cert, err := manager.GetCertificate(hello)
 	if err != nil {
 		t.Errorf("GetCertificate failed: %v", err)
 	}

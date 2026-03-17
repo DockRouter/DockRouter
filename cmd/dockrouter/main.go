@@ -37,15 +37,16 @@ var dashboardFS embed.FS
 
 // App holds all application components
 type App struct {
-	config          *config.Config
-	logger          *log.Logger
-	routeTable      *router.Table
-	tlsManager      *tlspkg.Manager
-	challengeSolver *tlspkg.ChallengeSolver
-	healthChecker   *health.Checker
-	discoveryEngine *discovery.Engine
-	metrics         *metrics.Collector
-	startTime       time.Time
+	config            *config.Config
+	logger            *log.Logger
+	routeTable        *router.Table
+	tlsManager        *tlspkg.Manager
+	challengeSolver   *tlspkg.ChallengeSolver
+	healthChecker     *health.Checker
+	discoveryEngine   *discovery.Engine
+	metrics           *metrics.Collector
+	middlewareBuilder *router.RouteMiddlewareBuilder
+	startTime         time.Time
 }
 
 func main() {
@@ -180,8 +181,11 @@ func (a *App) start(ctx context.Context) {
 	// Initialize proxy
 	pxy := proxy.NewProxy(a.logger)
 
-	// Initialize router
-	httpRouter := router.NewRouter(a.routeTable, pxy, a.logger)
+	// Initialize middleware builder (shared for cleanup)
+	a.middlewareBuilder = router.NewRouteMiddlewareBuilder()
+
+	// Initialize router with shared middleware builder
+	httpRouter := router.NewRouterWithMiddleware(a.routeTable, pxy, a.logger, a.middlewareBuilder)
 
 	// Build middleware chain
 	coreHandler := a.buildMiddlewareChain(httpRouter)
@@ -497,6 +501,41 @@ func (s *appRouteSink) AddRoute(info *discovery.ContainerInfo) {
 		ContainerName: info.Name,
 		CreatedAt:     time.Now(),
 	}
+
+	// Apply middleware configuration from labels
+	route.MiddlewareConfig = router.MiddlewareConfig{
+		RateLimit: router.RateLimitConfig{
+			Enabled: info.Config.RateLimit.Enabled,
+			Count:   info.Config.RateLimit.Count,
+			Window:  info.Config.RateLimit.Window,
+			ByKey:   info.Config.RateLimit.ByKey,
+		},
+		CORS: router.CORSConfig{
+			Enabled: info.Config.CORS.Enabled,
+			Origins: info.Config.CORS.Origins,
+			Methods: info.Config.CORS.Methods,
+			Headers: info.Config.CORS.Headers,
+		},
+		Compress:    info.Config.Compress,
+		StripPrefix: info.Config.StripPrefix,
+		AddPrefix:   info.Config.AddPrefix,
+		MaxBody:     info.Config.MaxBody,
+		CircuitBreaker: router.CircuitBreakerConfig{
+			Enabled:  info.Config.CircuitBreaker.Enabled,
+			Failures: info.Config.CircuitBreaker.Failures,
+			Window:   info.Config.CircuitBreaker.Window,
+		},
+	}
+
+	// Copy basic auth users
+	for _, u := range info.Config.BasicAuthUsers {
+		route.MiddlewareConfig.BasicAuthUsers = append(route.MiddlewareConfig.BasicAuthUsers,
+			router.BasicAuthUser{Username: u.Username, Hash: u.Hash})
+	}
+
+	// Copy IP whitelists/blacklists
+	route.MiddlewareConfig.IPWhitelist = info.Config.IPWhitelist
+	route.MiddlewareConfig.IPBlacklist = info.Config.IPBlacklist
 
 	if info.Config.TLS != "off" {
 		route.TLS = router.TLSConfig{

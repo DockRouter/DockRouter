@@ -22,7 +22,7 @@ func TestRouteTableAdd(t *testing.T) {
 
 	got := table.Get("test-1")
 	if got == nil {
-		t.Error("Route not found")
+		t.Fatal("Route not found")
 	}
 	if got.Host != "example.com" {
 		t.Errorf("Host = %s, want example.com", got.Host)

@@ -8,10 +8,11 @@ import (
 
 // Router matches requests to routes and delegates to proxy
 type Router struct {
-	table      *Table
-	proxy      Proxy
-	logger     Logger
-	maxRetries int
+	table             *Table
+	proxy             Proxy
+	logger            Logger
+	maxRetries        int
+	middlewareBuilder *RouteMiddlewareBuilder
 }
 
 // Proxy is the interface for proxying requests
@@ -30,10 +31,22 @@ type Logger interface {
 // NewRouter creates a new router
 func NewRouter(table *Table, proxy Proxy, logger Logger) *Router {
 	return &Router{
-		table:      table,
-		proxy:      proxy,
-		logger:     logger,
-		maxRetries: 3, // Default to 3 retries
+		table:             table,
+		proxy:             proxy,
+		logger:            logger,
+		maxRetries:        3, // Default to 3 retries
+		middlewareBuilder: NewRouteMiddlewareBuilder(),
+	}
+}
+
+// NewRouterWithMiddleware creates a new router with a shared middleware builder
+func NewRouterWithMiddleware(table *Table, proxy Proxy, logger Logger, builder *RouteMiddlewareBuilder) *Router {
+	return &Router{
+		table:             table,
+		proxy:             proxy,
+		logger:            logger,
+		maxRetries:        3,
+		middlewareBuilder: builder,
 	}
 }
 
@@ -69,70 +82,88 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Try backends with retry logic
-	var lastErr error
-	triedBackends := make(map[string]bool)
-
-	for attempt := 0; attempt < r.maxRetries; attempt++ {
-		// Get backend from pool
-		backend := route.Backend.Select(req.RemoteAddr)
-		if backend == nil {
-			// No more healthy backends - all were marked unhealthy during retries
-			break
-		}
-
-		// Skip if already tried
-		if triedBackends[backend.Address] {
-			// All healthy backends tried, no more options
-			break
-		}
-		triedBackends[backend.Address] = true
-
-		// Record request
-		route.Backend.RecordRequest(backend.Address)
-
-		// Log the match
-		r.logger.Debug("Route matched",
-			"host", host,
-			"path", path,
-			"backend", backend.Address,
-			"container", route.ContainerName,
-			"attempt", attempt+1,
-		)
-
-		// Proxy the request
-		err := r.proxy.ServeHTTP(w, req, backend.Address)
-		if err == nil {
-			// Success
-			return
-		}
-
-		// Record failure and try next backend
-		lastErr = err
-		r.logger.Warn("Proxy error, trying next backend",
-			"error", err,
-			"backend", backend.Address,
-			"path", path,
-			"attempt", attempt+1,
-		)
-		route.Backend.RecordFailure(backend.Address)
-
-		// Mark this backend as unhealthy temporarily for retry
-		route.Backend.MarkUnhealthy(backend.Address)
+	// Determine max retries for this route (use route config if set, otherwise default)
+	maxRetries := r.maxRetries
+	if route.MiddlewareConfig.Retry > 0 {
+		maxRetries = route.MiddlewareConfig.Retry
 	}
 
-	// All retries exhausted
-	if lastErr != nil {
-		r.logger.Error("All backends failed",
-			"error", lastErr,
-			"path", path,
-			"attempts", r.maxRetries,
-		)
-		http.Error(w, "Bad Gateway", http.StatusBadGateway)
-	} else {
-		// No backends were tried (shouldn't happen if HealthyCount > 0)
-		r.handleNoBackend(w, req, route)
-	}
+	// Create the proxy handler with retry logic
+	proxyHandler := r.createProxyHandler(route, host, path, maxRetries)
+
+	// Apply per-route middleware and execute
+	chain := r.middlewareBuilder.BuildChain(route, proxyHandler)
+	chain.ServeHTTP(w, req)
+}
+
+// createProxyHandler creates a handler that proxies to backends with retry logic
+func (r *Router) createProxyHandler(route *Route, host, path string, maxRetries int) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// Try backends with retry logic
+		var lastErr error
+		triedBackends := make(map[string]bool)
+
+		for attempt := 0; attempt < maxRetries; attempt++ {
+			// Get backend from pool
+			backend := route.Backend.Select(req.RemoteAddr)
+			if backend == nil {
+				// No more healthy backends - all were marked unhealthy during retries
+				break
+			}
+
+			// Skip if already tried
+			if triedBackends[backend.Address] {
+				// All healthy backends tried, no more options
+				break
+			}
+			triedBackends[backend.Address] = true
+
+			// Record request
+			route.Backend.RecordRequest(backend.Address)
+
+			// Log the match
+			r.logger.Debug("Route matched",
+				"host", host,
+				"path", path,
+				"backend", backend.Address,
+				"container", route.ContainerName,
+				"attempt", attempt+1,
+			)
+
+			// Proxy the request
+			err := r.proxy.ServeHTTP(w, req, backend.Address)
+			if err == nil {
+				// Success
+				return
+			}
+
+			// Record failure and try next backend
+			lastErr = err
+			r.logger.Warn("Proxy error, trying next backend",
+				"error", err,
+				"backend", backend.Address,
+				"path", path,
+				"attempt", attempt+1,
+			)
+			route.Backend.RecordFailure(backend.Address)
+
+			// Mark this backend as unhealthy temporarily for retry
+			route.Backend.MarkUnhealthy(backend.Address)
+		}
+
+		// All retries exhausted
+		if lastErr != nil {
+			r.logger.Error("All backends failed",
+				"error", lastErr,
+				"path", path,
+				"attempts", maxRetries,
+			)
+			http.Error(w, "Bad Gateway", http.StatusBadGateway)
+		} else {
+			// No backends were tried (shouldn't happen if HealthyCount > 0)
+			r.handleNoBackend(w, req, route)
+		}
+	})
 }
 
 // handleNoMatch handles requests with no matching route
@@ -165,6 +196,12 @@ func (r *Router) handleNoBackend(w http.ResponseWriter, req *http.Request, route
 // GetTable returns the route table (for admin API)
 func (r *Router) GetTable() *Table {
 	return r.table
+}
+
+// CleanupRoute cleans up middleware state for a route
+func (r *Router) CleanupRoute(routeID string) {
+	r.middlewareBuilder.RemoveRateLimiter(routeID)
+	r.middlewareBuilder.RemoveCircuitBreaker(routeID)
 }
 
 // buildErrorPage generates a branded error page

@@ -311,14 +311,14 @@ func BenchmarkAuthMiddlewareUnauthorized(b *testing.B) {
 // API Handler Tests
 
 func TestNewAPIHandler(t *testing.T) {
-	handler := NewAPIHandler()
+	handler := NewAPIHandler(nil)
 	if handler == nil {
 		t.Fatal("NewAPIHandler returned nil")
 	}
 }
 
 func TestAPIHandlerRoutes(t *testing.T) {
-	handler := NewAPIHandler()
+	handler := NewAPIHandler(nil)
 	routes := handler.Routes()
 
 	if len(routes) != 6 {
@@ -342,7 +342,7 @@ func TestAPIHandlerRoutes(t *testing.T) {
 }
 
 func TestAPIHandlerStatus(t *testing.T) {
-	handler := NewAPIHandler()
+	handler := NewAPIHandler(nil)
 	routes := handler.Routes()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
@@ -356,7 +356,7 @@ func TestAPIHandlerStatus(t *testing.T) {
 }
 
 func TestAPIHandlerRoutesEndpoint(t *testing.T) {
-	handler := NewAPIHandler()
+	handler := NewAPIHandler(nil)
 	routes := handler.Routes()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/routes", nil)
@@ -370,7 +370,7 @@ func TestAPIHandlerRoutesEndpoint(t *testing.T) {
 }
 
 func TestAPIHandlerContainers(t *testing.T) {
-	handler := NewAPIHandler()
+	handler := NewAPIHandler(nil)
 	routes := handler.Routes()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/containers", nil)
@@ -384,7 +384,7 @@ func TestAPIHandlerContainers(t *testing.T) {
 }
 
 func TestAPIHandlerCertificates(t *testing.T) {
-	handler := NewAPIHandler()
+	handler := NewAPIHandler(nil)
 	routes := handler.Routes()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/certificates", nil)
@@ -398,7 +398,7 @@ func TestAPIHandlerCertificates(t *testing.T) {
 }
 
 func TestAPIHandlerMetrics(t *testing.T) {
-	handler := NewAPIHandler()
+	handler := NewAPIHandler(nil)
 	routes := handler.Routes()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/metrics", nil)
@@ -410,14 +410,15 @@ func TestAPIHandlerMetrics(t *testing.T) {
 		t.Errorf("Status code = %d, want %d", rec.Code, http.StatusOK)
 	}
 
-	body := rec.Body.String()
-	if body == "" {
-		t.Error("Metrics response should not be empty")
+	// With nil metrics collector, response should be empty but valid
+	contentType := rec.Header().Get("Content-Type")
+	if contentType != "text/plain; version=0.0.4" {
+		t.Errorf("Content-Type = %s, want text/plain; version=0.0.4", contentType)
 	}
 }
 
 func TestAPIHandlerHealth(t *testing.T) {
-	handler := NewAPIHandler()
+	handler := NewAPIHandler(nil)
 	routes := handler.Routes()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
