@@ -15,24 +15,6 @@ func (m *mockLogger) Info(msg string, fields ...interface{})  {}
 func (m *mockLogger) Warn(msg string, fields ...interface{})  {}
 func (m *mockLogger) Error(msg string, fields ...interface{}) {}
 
-type mockDockerClient struct {
-	containers []Container
-	detail    *ContainerDetail
-	err       error
-}
-
-func (m *mockDockerClient) ListContainers(ctx context.Context) ([]Container, error) {
-	return m.containers, m.err
-}
-
-func (m *mockDockerClient) ListAllContainers(ctx context.Context) ([]Container, error) {
-	return m.containers, m.err
-}
-
-func (m *mockDockerClient) InspectContainer(ctx context.Context, id string) (*ContainerDetail, error) {
-	return m.detail, m.err
-}
-
 type mockRouteSink struct {
 	mu       sync.RWMutex
 	routes   map[string]*ContainerInfo
@@ -609,26 +591,6 @@ func TestContainerInfoChangedAllFields(t *testing.T) {
 			}
 		})
 	}
-}
-
-// mockDockerClientForEngine implements DockerClientInterface for engine tests
-// Note: This mock is not used with NewEngine as it expects *DockerClient concrete type
-type mockDockerClientForEngine struct {
-	containers []Container
-	detail     *ContainerDetail
-	err        error
-}
-
-func (m *mockDockerClientForEngine) ListContainers(ctx context.Context) ([]Container, error) {
-	return m.containers, m.err
-}
-
-func (m *mockDockerClientForEngine) ListAllContainers(ctx context.Context) ([]Container, error) {
-	return m.containers, m.err
-}
-
-func (m *mockDockerClientForEngine) InspectContainer(ctx context.Context, id string) (*ContainerDetail, error) {
-	return m.detail, m.err
 }
 
 // TestEngineSyncError tests that Sync returns an error when Docker is not available

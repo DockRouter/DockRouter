@@ -469,27 +469,6 @@ func (m *mockConn) SetDeadline(t time.Time) error     { return nil }
 func (m *mockConn) SetReadDeadline(t time.Time) error  { return nil }
 func (m *mockConn) SetWriteDeadline(t time.Time) error { return nil }
 
-// mockDockerClientStream implements DockerClientInterface for streaming tests
-type mockDockerClientStream struct {
-	eventsChan chan Event
-	err        error
-}
-
-func (m *mockDockerClientStream) EventsStream(ctx context.Context, filters map[string]string) (<-chan Event, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	if m.eventsChan != nil {
-		return m.eventsChan, nil
-	}
-	ch := make(chan Event)
-	go func() {
-		defer close(ch)
-		<-ctx.Done()
-	}()
-	return ch, nil
-}
-
 func TestEventStreamSubscribe(t *testing.T) {
 	client, _ := NewDockerClient("")
 	stream := NewEventStream(client)

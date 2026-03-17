@@ -25,11 +25,6 @@ type Manager struct {
 	acme      *ACMEClient
 	challenge *ChallengeSolver
 	logger    Logger
-
-	// Configuration
-	acmeEmail    string
-	acmeStaging  bool
-	dataDir      string
 }
 
 // NewManager creates a new TLS manager
