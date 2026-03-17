@@ -524,9 +524,9 @@ func TestIntToStr(t *testing.T) {
 func TestRateLimiterAllow(t *testing.T) {
 	limiter := NewRateLimiter(100, 60, 100)
 
-	// allow should always return true in current implementation
-	if !limiter.allow("test-key") {
-		t.Error("allow should return true")
+	// First request should succeed
+	if allowed, _ := limiter.allow("test-key"); !allowed {
+		t.Error("first allow should return true")
 	}
 }
 
