@@ -91,7 +91,13 @@ func (l *Logger) log(level Level, msg string, fields ...interface{}) {
 		if i+1 < len(fields) {
 			key, ok := fields[i].(string)
 			if ok {
-				entry.Fields[key] = fields[i+1]
+				val := fields[i+1]
+				// Handle error type specially
+				if err, ok := val.(error); ok {
+					entry.Fields[key] = err.Error()
+				} else {
+					entry.Fields[key] = val
+				}
 			}
 		}
 	}

@@ -9,12 +9,13 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
 
 // DockerAPIVersion is the Docker API version to use
-const DockerAPIVersion = "v1.44"
+const DockerAPIVersion = "v1.53"
 
 // DockerClient communicates with Docker daemon via Unix socket
 type DockerClient struct {
@@ -152,14 +153,19 @@ func (c *DockerClient) Ping(ctx context.Context) error {
 
 // Container represents a Docker container summary
 type Container struct {
-	ID      string            `json:"Id"`
-	Names   []string          `json:"Names"`
-	Image   string            `json:"Image"`
-	State   string            `json:"State"`
-	Status  string            `json:"Status"`
-	Labels  map[string]string `json:"Labels"`
-	Ports   []PortBinding     `json:"Ports"`
-	NetworkMode string         `json:"HostConfig,omitempty"`
+	ID         string            `json:"Id"`
+	Names      []string          `json:"Names"`
+	Image      string            `json:"Image"`
+	State      string            `json:"State"`
+	Status     string            `json:"Status"`
+	Labels     map[string]string `json:"Labels"`
+	Ports      []PortBinding     `json:"Ports"`
+	HostConfig *HostConfig       `json:"HostConfig,omitempty"`
+}
+
+// HostConfig contains container host configuration
+type HostConfig struct {
+	NetworkMode string `json:"NetworkMode"`
 }
 
 // PortBinding represents a port mapping
@@ -285,9 +291,16 @@ type EventActor struct {
 
 // EventsStream starts streaming Docker events
 func (c *DockerClient) EventsStream(ctx context.Context, filters map[string]string) (<-chan Event, error) {
-	// Build filter query
-	filterJSON, _ := json.Marshal(filters)
-	path := fmt.Sprintf("/events?filters=%s", string(filterJSON))
+	// Build filter query - Docker API expects filters as JSON with array values
+	// e.g., {"type":["container"],"event":["start","stop","die"]}
+	apiFilters := make(map[string][]string)
+	for k, v := range filters {
+		// Split comma-separated values into array
+		apiFilters[k] = strings.Split(v, ",")
+	}
+
+	filterJSON, _ := json.Marshal(apiFilters)
+	path := fmt.Sprintf("/events?filters=%s", url.QueryEscape(string(filterJSON)))
 
 	stream, err := c.doStreamRequest(ctx, http.MethodGet, path)
 	if err != nil {
