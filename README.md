@@ -15,12 +15,14 @@
 - **🚀 Zero external dependencies** — Pure Go stdlib, no external packages
 - **🔒 Automatic TLS** — Let's Encrypt HTTP-01 challenge built-in
 - **🏷️ Label-based discovery** — Configure routing via Docker labels
-- **📦 Single binary** — <10MB, runs anywhere
+- **📦 Single binary** — <12MB, runs anywhere
 - **🎛️ Built-in dashboard** — Admin UI on port 9090
 - **🔥 Hot reload** — Routes update instantly when containers start/stop
 - **🛡️ Production-ready** — Rate limiting, health checks, circuit breaker, CORS
 - **🔌 WebSocket support** — Transparent WebSocket proxying
 - **📊 Prometheus metrics** — Built-in metrics endpoint
+- **⚖️ Load Balancing** — Round-robin, weighted, IP hash, least connections
+- **🌐 Proxy Support** — X-Forwarded-For, X-Real-IP, Cloudflare headers
 
 ---
 
@@ -225,6 +227,19 @@ Same options available as CLI flags:
 dockrouter --http-port=8080 --https-port=8443 --acme-email=you@example.com
 ```
 
+### CLI Commands
+
+```bash
+# Show version information
+dockrouter version
+
+# Docker healthcheck
+dockrouter healthcheck
+
+# Show help
+dockrouter --help
+```
+
 ---
 
 ## 🔒 TLS Configuration
@@ -327,6 +342,13 @@ curl http://localhost:9090/api/v1/metrics
 labels:
   dr.ipwhitelist: "192.168.0.0/16,10.0.0.0/8"
   dr.ipblacklist: "192.168.100.1/32"
+```
+
+**Behind Load Balancers:** DockRouter supports `X-Forwarded-For`, `X-Real-IP`, and `CF-Connecting-IP` headers. Configure trusted proxies:
+
+```bash
+# Set trusted proxy IPs (via environment variable)
+DR_TRUSTED_IPS=10.0.0.0/8,172.16.0.0/12
 ```
 
 ### CORS
