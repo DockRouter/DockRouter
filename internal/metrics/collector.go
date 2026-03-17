@@ -145,3 +145,18 @@ func (h *Histogram) Buckets() []HistogramBucket {
 	copy(result, h.buckets)
 	return result
 }
+
+// IncCounter is a convenience method to increment a counter by name
+func (c *Collector) IncCounter(name string) {
+	c.Counter(name).Inc()
+}
+
+// SetGauge is a convenience method to set a gauge by name
+func (c *Collector) SetGauge(name string, value float64) {
+	c.Gauge(name).Set(value)
+}
+
+// ObserveHistogram is a convenience method to observe a histogram by name
+func (c *Collector) ObserveHistogram(name string, value float64) {
+	c.Histogram(name).Observe(value)
+}
