@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -296,6 +297,9 @@ func (a *App) buildAdminHandler() http.Handler {
 	dashboardRoot, _ := fs.Sub(dashboardFS, "dashboard")
 	fileServer := http.FileServer(http.FS(dashboardRoot))
 	mux.Handle("/static/", http.StripPrefix("/static/", fileServer))
+	// Serve dashboard assets directly
+	mux.HandleFunc("/style.css", a.serveDashboardAsset)
+	mux.HandleFunc("/app.js", a.serveDashboardAsset)
 	mux.HandleFunc("/", a.handleDashboard)
 
 	// Apply auth if configured
@@ -310,12 +314,22 @@ func (a *App) buildAdminHandler() http.Handler {
 // API Handlers
 
 func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
-	uptime := time.Since(a.startTime).Round(time.Second)
+	uptime := time.Since(a.startTime)
+	containers := 0
+	certificates := 0
+	if a.discoveryEngine != nil {
+		containers = len(a.discoveryEngine.GetContainers())
+	}
+	if a.tlsManager != nil {
+		certificates = len(a.tlsManager.ListCertificates())
+	}
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"status":"ok","version":"%s","routes":%d,"uptime":"%s","http_port":%d,"https_port":%d}`,
+	fmt.Fprintf(w, `{"status":"ok","version":"%s","routes":%d,"containers":%d,"certificates":%d,"uptime":"%s","http_port":%d,"https_port":%d}`,
 		a.config.Version,
 		a.routeTable.Count(),
-		uptime,
+		containers,
+		certificates,
+		uptime.Round(time.Second),
 		a.config.HTTPPort,
 		a.config.HTTPSPort,
 	)
@@ -329,10 +343,17 @@ func (a *App) handleRoutes(w http.ResponseWriter, r *http.Request) {
 		if i > 0 {
 			fmt.Fprintf(w, ",")
 		}
-		fmt.Fprintf(w, `{"id":"%s","host":"%s","path":"%s","healthy":%v}`,
+		backend := "-"
+		if route.Backend != nil && len(route.Backend.Targets) > 0 {
+			backend = route.Backend.Targets[0].Address
+		}
+		tlsStatus := route.TLS.Mode != ""
+		fmt.Fprintf(w, `{"id":"%s","host":"%s","path_prefix":"%s","backend":"%s","tls":%v,"healthy":%v}`,
 			route.ID[:12],
 			route.Host,
 			route.PathPrefix,
+			backend,
+			tlsStatus,
 			route.Backend != nil && !route.Backend.AllUnhealthy(),
 		)
 	}
@@ -351,11 +372,17 @@ func (a *App) handleContainers(w http.ResponseWriter, r *http.Request) {
 		if i > 0 {
 			fmt.Fprintf(w, ",")
 		}
-		fmt.Fprintf(w, `{"id":"%s","name":"%s","host":"%s","address":"%s","healthy":%v}`,
+		status := "running"
+		if !c.Healthy {
+			status = "unhealthy"
+		}
+		// ContainerInfo doesn't have Image/Labels, use available fields
+		fmt.Fprintf(w, `{"id":"%s","name":"%s","image":"","host":"%s","address":"%s","running":true,"status":"%s","healthy":%v,"labels":1}`,
 			c.ID[:12],
 			c.Name,
 			c.Config.Host,
 			c.Address,
+			status,
 			c.Healthy,
 		)
 	}
@@ -414,6 +441,28 @@ func (a *App) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html")
+	w.Write(data)
+}
+
+func (a *App) serveDashboardAsset(w http.ResponseWriter, r *http.Request) {
+	// Get filename from path
+	filename := r.URL.Path[1:] // Remove leading slash
+
+	// Serve embedded file
+	data, err := dashboardFS.ReadFile("dashboard/" + filename)
+	if err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+
+	// Set content type
+	switch {
+	case strings.HasSuffix(filename, ".css"):
+		w.Header().Set("Content-Type", "text/css")
+	case strings.HasSuffix(filename, ".js"):
+		w.Header().Set("Content-Type", "application/javascript")
+	}
+
 	w.Write(data)
 }
 
