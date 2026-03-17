@@ -9,8 +9,8 @@
 *.so
 *.dylib
 bin/
-dockrouter
-dockrouter-*
+/dockrouter
+/dockrouter-*
 
 # Build artifacts
 dist/
