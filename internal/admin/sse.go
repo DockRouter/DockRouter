@@ -2,6 +2,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"net/http"
 	"sync"
 )
@@ -96,10 +97,13 @@ func (h *SSEHub) Handler() http.HandlerFunc {
 			case <-r.Context().Done():
 				return
 			case event := <-client.ch:
-				// Write SSE format
+				// Write SSE format with JSON encoded event
 				w.Write([]byte("data: "))
-				// TODO: JSON encode event - for now just send type
-				w.Write([]byte(event.Type))
+				data, err := json.Marshal(event)
+				if err != nil {
+					continue
+				}
+				w.Write(data)
 				w.Write([]byte("\n\n"))
 				flusher.Flush()
 			}
