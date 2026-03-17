@@ -376,14 +376,22 @@ func (a *App) handleContainers(w http.ResponseWriter, r *http.Request) {
 		if !c.Healthy {
 			status = "unhealthy"
 		}
-		// ContainerInfo doesn't have Image/Labels, use available fields
-		fmt.Fprintf(w, `{"id":"%s","name":"%s","image":"","host":"%s","address":"%s","running":true,"status":"%s","healthy":%v,"labels":1}`,
+		// Count dr.* labels
+		drLabelCount := 0
+		for label := range c.Labels {
+			if strings.HasPrefix(label, "dr.") {
+				drLabelCount++
+			}
+		}
+		fmt.Fprintf(w, `{"id":"%s","name":"%s","image":"%s","host":"%s","address":"%s","running":true,"status":"%s","healthy":%v,"labels":%d}`,
 			c.ID[:12],
 			c.Name,
+			c.Image,
 			c.Config.Host,
 			c.Address,
 			status,
 			c.Healthy,
+			drLabelCount,
 		)
 	}
 	fmt.Fprintf(w, "]")

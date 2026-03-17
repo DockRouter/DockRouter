@@ -175,13 +175,20 @@ function handleEvent(event) {
     logOutput.textContent = '[' + timestamp + '] ' + event.type + '\n' + existing;
 }
 
-// Format uptime
-function formatUptime(seconds) {
-    if (!seconds) return '-';
-    const days = Math.floor(seconds / 86400);
-    const hours = Math.floor((seconds % 86400) / 3600);
+// Format uptime - handles both string format ("40s", "1m30s") and seconds number
+function formatUptime(uptime) {
+    if (!uptime) return '-';
+
+    // If it's a string, try to parse duration format like "40s", "1m30s", "2h15m30s"
+    if (typeof uptime === 'string') {
+        return uptime; // API already returns formatted duration
+    }
+
+    // If it's a number (seconds), format it
+    const days = Math.floor(uptime / 86400);
+    const hours = Math.floor((uptime % 86400) / 3600);
     if (days > 0) return days + 'd ' + hours + 'h';
-    const minutes = Math.floor((seconds % 3600) / 60);
+    const minutes = Math.floor((uptime % 3600) / 60);
     if (hours > 0) return hours + 'h ' + minutes + 'm';
     return minutes + 'm';
 }

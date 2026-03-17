@@ -25,6 +25,8 @@ type Engine struct {
 type ContainerInfo struct {
 	ID        string
 	Name      string
+	Image     string
+	Labels    map[string]string
 	Config    *RouteConfig
 	Address   string
 	Port      int
@@ -166,6 +168,8 @@ func (e *Engine) buildContainerInfo(c Container, detail *ContainerDetail, config
 	info := &ContainerInfo{
 		ID:        c.ID,
 		Name:      extractName(c.Names),
+		Image:     c.Image,
+		Labels:    c.Labels,
 		Config:    config,
 		UpdatedAt: time.Now(),
 	}
@@ -293,9 +297,10 @@ func (e *Engine) onContainerStart(ctx context.Context, id string) {
 
 	// Build container info
 	c := Container{
-		ID:      id,
-		Names:   []string{detail.Name},
-		Labels:  detail.Config.Labels,
+		ID:     id,
+		Names:  []string{detail.Name},
+		Image:  detail.Config.Image,
+		Labels: detail.Config.Labels,
 	}
 
 	info := e.buildContainerInfo(c, detail, config)

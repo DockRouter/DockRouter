@@ -1,4 +1,8 @@
-# Binaries
+# ===========================================
+# DockRouter .gitignore
+# ===========================================
+
+# Binaries and executables
 *.exe
 *.exe~
 *.dll
@@ -8,40 +12,75 @@ bin/
 dockrouter
 dockrouter-*
 
-# Test coverage
-*.out
-coverage.txt
-coverage.html
-
 # Build artifacts
+dist/
 *.log
 *.tmp
 *.zip
 *.tar.gz
-dist/
+*.tar.xz
+*.deb
+*.rpm
 
-# IDE
+# Test artifacts
+*.out
+coverage.txt
+coverage.html
+coverage/
+
+# ===========================================
+# IDE and Editor
+# ===========================================
 .idea/
 .vscode/
 *.swp
 *.swo
+*~
+.project
+.classpath
+.settings/
 
-# OS
+# ===========================================
+# OS Generated
+# ===========================================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
 
+# ===========================================
 # Development
+# ===========================================
 .env
 .env.local
+.env.*.local
 *.pem
 *.key
+*.crt
 /data/
 
-# Internal docs (not for public repo)
-BRANDING.md
-IMPLEMENTATION.md
-SPECIFICATION.md
-TASKS.md
+# ===========================================
+# Internal Development Docs
+# (Not for public repo)
+# ===========================================
+/docs/internal/
 
+# ===========================================
 # Claude Code
+# ===========================================
 .claude/
+
+# ===========================================
+# Test Environment
+# ===========================================
+/test-env/data/
+
+# ===========================================
+# Website Build
+# ===========================================
+/website/dist/
+/website/.cache/
