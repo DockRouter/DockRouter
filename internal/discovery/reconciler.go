@@ -10,15 +10,15 @@ import (
 
 // Engine orchestrates container discovery
 type Engine struct {
-	client    *DockerClient
-	events    *EventStream
-	poller    *Poller
-	routes    RouteSink
-	logger    Logger
+	client *DockerClient
+	events *EventStream
+	poller *Poller
+	routes RouteSink
+	logger Logger
 
-	mu        sync.RWMutex
+	mu         sync.RWMutex
 	containers map[string]*ContainerInfo
-	running   bool
+	running    bool
 }
 
 // ContainerInfo holds cached container information

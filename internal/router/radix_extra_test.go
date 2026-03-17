@@ -111,13 +111,13 @@ func TestRadixTreeComplexTreeStructure(t *testing.T) {
 	for i, path := range paths {
 		route := tree.Match(path)
 		if route == nil {
-				t.Fatalf("Path %s should match", path)
-			}
-			expectedID := "route-" + string(rune('0'+i))
-			if route.ID != expectedID {
-				t.Errorf("Match(%s) = %s, want %s", path, route.ID, expectedID)
-		 }
+			t.Fatalf("Path %s should match", path)
 		}
+		expectedID := "route-" + string(rune('0'+i))
+		if route.ID != expectedID {
+			t.Errorf("Match(%s) = %s, want %s", path, route.ID, expectedID)
+		}
+	}
 
 	// Test partial paths
 	route := tree.Match("/api/v1/users/123")

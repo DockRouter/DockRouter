@@ -38,22 +38,22 @@ const (
 
 // Middleware labels
 const (
-	LabelRateLimit        = "dr.ratelimit"
-	LabelRateLimitBy      = "dr.ratelimit.by"
-	LabelCORSOrigins      = "dr.cors.origins"
-	LabelCORSMethods      = "dr.cors.methods"
-	LabelCORSHeaders      = "dr.cors.headers"
-	LabelCompress         = "dr.compress"
-	LabelRedirectHTTPS    = "dr.redirect.https"
-	LabelStripPrefix      = "dr.stripprefix"
-	LabelAddPrefix        = "dr.addprefix"
-	LabelMaxBody          = "dr.maxbody"
-	LabelAuthBasicUsers   = "dr.auth.basic.users"
-	LabelIPWhitelist      = "dr.ipwhitelist"
-	LabelIPBlacklist      = "dr.ipblacklist"
-	LabelRetry            = "dr.retry"
-	LabelCircuitBreaker   = "dr.circuitbreaker"
-	LabelMiddlewares      = "dr.middlewares"
+	LabelRateLimit      = "dr.ratelimit"
+	LabelRateLimitBy    = "dr.ratelimit.by"
+	LabelCORSOrigins    = "dr.cors.origins"
+	LabelCORSMethods    = "dr.cors.methods"
+	LabelCORSHeaders    = "dr.cors.headers"
+	LabelCompress       = "dr.compress"
+	LabelRedirectHTTPS  = "dr.redirect.https"
+	LabelStripPrefix    = "dr.stripprefix"
+	LabelAddPrefix      = "dr.addprefix"
+	LabelMaxBody        = "dr.maxbody"
+	LabelAuthBasicUsers = "dr.auth.basic.users"
+	LabelIPWhitelist    = "dr.ipwhitelist"
+	LabelIPBlacklist    = "dr.ipblacklist"
+	LabelRetry          = "dr.retry"
+	LabelCircuitBreaker = "dr.circuitbreaker"
+	LabelMiddlewares    = "dr.middlewares"
 )
 
 // Health check labels
@@ -117,10 +117,10 @@ type RateLimitConfig struct {
 
 // CORSConfig holds CORS configuration
 type CORSConfig struct {
-	Enabled    bool
-	Origins    []string
-	Methods    []string
-	Headers    []string
+	Enabled     bool
+	Origins     []string
+	Methods     []string
+	Headers     []string
 	Credentials bool
 }
 
@@ -279,42 +279,35 @@ func (c *RouteConfig) parseBasicAuth(labels map[string]string) {
 func (c *RouteConfig) parseIPFilters(labels map[string]string) {
 	// Whitelist
 	if whitelist := labels[LabelIPWhitelist]; whitelist != "" {
-		for _, cidr := range strings.Split(whitelist, ",") {
-			cidr = strings.TrimSpace(cidr)
-			if _, network, err := net.ParseCIDR(cidr); err == nil {
-				c.IPWhitelist = append(c.IPWhitelist, network)
-			} else if ip := net.ParseIP(cidr); ip != nil {
-				// Single IP, convert to /32 or /128
-				bits := 32
-				if ip.To4() == nil {
-					bits = 128
-				}
-				_, network, _ := net.ParseCIDR(fmt.Sprintf("%s/%d", cidr, bits))
-				if network != nil {
-					c.IPWhitelist = append(c.IPWhitelist, network)
-				}
-			}
-		}
+		c.IPWhitelist = parseIPNetworks(whitelist)
 	}
 
 	// Blacklist
 	if blacklist := labels[LabelIPBlacklist]; blacklist != "" {
-		for _, cidr := range strings.Split(blacklist, ",") {
-			cidr = strings.TrimSpace(cidr)
-			if _, network, err := net.ParseCIDR(cidr); err == nil {
-				c.IPBlacklist = append(c.IPBlacklist, network)
-			} else if ip := net.ParseIP(cidr); ip != nil {
-				bits := 32
-				if ip.To4() == nil {
-					bits = 128
-				}
-				_, network, _ := net.ParseCIDR(fmt.Sprintf("%s/%d", cidr, bits))
-				if network != nil {
-					c.IPBlacklist = append(c.IPBlacklist, network)
-				}
+		c.IPBlacklist = parseIPNetworks(blacklist)
+	}
+}
+
+// parseIPNetworks parses a comma-separated list of IPs or CIDRs into networks
+func parseIPNetworks(list string) []*net.IPNet {
+	var networks []*net.IPNet
+	for _, cidr := range strings.Split(list, ",") {
+		cidr = strings.TrimSpace(cidr)
+		if _, network, err := net.ParseCIDR(cidr); err == nil {
+			networks = append(networks, network)
+		} else if ip := net.ParseIP(cidr); ip != nil {
+			// Single IP, convert to /32 or /128
+			bits := 32
+			if ip.To4() == nil {
+				bits = 128
+			}
+			_, network, _ := net.ParseCIDR(fmt.Sprintf("%s/%d", cidr, bits))
+			if network != nil {
+				networks = append(networks, network)
 			}
 		}
 	}
+	return networks
 }
 
 func (c *RouteConfig) parseCircuitBreaker(labels map[string]string) {

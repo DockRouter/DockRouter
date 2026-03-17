@@ -22,11 +22,11 @@ func TestRouteStoreAdd(t *testing.T) {
 	store := NewRouteStore()
 
 	route := &Route{
-		ID:        "route-1",
-		Host:      "example.com",
+		ID:         "route-1",
+		Host:       "example.com",
 		PathPrefix: "/",
-		Priority:  10,
-		CreatedAt: time.Now(),
+		Priority:   10,
+		CreatedAt:  time.Now(),
 	}
 
 	store.Add(route)
@@ -282,7 +282,7 @@ func TestRouteIsEnabled(t *testing.T) {
 
 func TestRouteIsAuto(t *testing.T) {
 	route := &Route{
-		ID: "route-1",
+		ID:  "route-1",
 		TLS: TLSConfig{Mode: "auto"},
 	}
 
@@ -404,8 +404,8 @@ func TestRouteWithTLS(t *testing.T) {
 	store := NewRouteStore()
 
 	route := &Route{
-		ID:        "route-1",
-		Host:      "example.com",
+		ID:   "route-1",
+		Host: "example.com",
 		TLS: TLSConfig{
 			Mode:     "auto",
 			Domains:  []string{"example.com", "www.example.com"},

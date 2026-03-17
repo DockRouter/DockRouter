@@ -39,8 +39,8 @@ func (e *EventStream) SubscribeWithFilters(ctx context.Context, filters map[stri
 // SubscribeLifecycle listens for container lifecycle events (start, stop, die)
 func (e *EventStream) SubscribeLifecycle(ctx context.Context) (<-chan Event, error) {
 	filters := map[string]string{
-		"type":   "container",
-		"event":  "start,stop,die,health_status",
+		"type":  "container",
+		"event": "start,stop,die,health_status",
 	}
 
 	return e.client.EventsStream(ctx, filters)

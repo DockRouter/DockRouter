@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -290,7 +291,7 @@ func (m *Manager) Renew(domain string) error {
 // generateCSR generates a Certificate Signing Request
 func (m *Manager) generateCSR(privKey *ecdsa.PrivateKey, domain string) ([]byte, error) {
 	template := &x509.CertificateRequest{
-		Subject: pkix.Name{CommonName: domain},
+		Subject:  pkix.Name{CommonName: domain},
 		DNSNames: []string{domain},
 	}
 
@@ -325,13 +326,46 @@ func (m *Manager) needsRenewal(cert *tls.Certificate) bool {
 	return time.Until(cert.Leaf.NotAfter) < 30*24*time.Hour
 }
 
-// getAccountThumbprint returns the account key thumbprint
+// getAccountThumbprint returns the account key thumbprint (RFC 7638)
 func (m *Manager) getAccountThumbprint() string {
 	if m.acme == nil || m.acme.privateKey == nil {
 		return ""
 	}
-	// Simplified thumbprint - in real impl would hash JWK
-	return "thumbprint"
+	return computeJWKThumbprint(m.acme.privateKey.PublicKey)
+}
+
+// computeJWKThumbprint computes the JWK thumbprint according to RFC 7638
+func computeJWKThumbprint(pubKey ecdsa.PublicKey) string {
+	// RFC 7638: JWK Thumbprint is computed from a JWK with only required members
+	// in lexicographical order: crv, kty, x, y for EC keys
+	xBytes := pubKey.X.Bytes()
+	yBytes := pubKey.Y.Bytes()
+
+	// Pad to 32 bytes for P-256
+	xPadded := padToLength(xBytes, 32)
+	yPadded := padToLength(yBytes, 32)
+
+	// Create canonical JWK JSON with members in lexicographic order
+	jwk := fmt.Sprintf(`{"crv":"P-256","kty":"EC","x":"%s","y":"%s"}`,
+		base64URLEncode(xPadded),
+		base64URLEncode(yPadded),
+	)
+
+	// SHA-256 hash
+	hash := sha256.Sum256([]byte(jwk))
+
+	// Base64url encode without padding
+	return base64URLEncode(hash[:])
+}
+
+// padToLength pads bytes to specified length
+func padToLength(b []byte, length int) []byte {
+	if len(b) >= length {
+		return b[len(b)-length:]
+	}
+	padded := make([]byte, length)
+	copy(padded[length-len(b):], b)
+	return padded
 }
 
 // GetCertificate returns a cached certificate

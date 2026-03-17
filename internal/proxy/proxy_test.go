@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"crypto/tls"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -284,4 +285,95 @@ func findSubstring(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+func TestSetForwardedHeaders(t *testing.T) {
+	logger := &mockLogger{}
+	proxy := NewProxy(logger)
+
+	tests := []struct {
+		name         string
+		remoteAddr   string
+		originalHost string
+		hostHeader   string
+		tls          bool
+		xff          string
+		checkXFF     func(string) bool
+		checkProto   string
+		checkHost    string
+	}{
+		{
+			name:         "basic IPv4",
+			remoteAddr:   "192.168.1.1:12345",
+			originalHost: "example.com",
+			checkXFF:     func(s string) bool { return s == "192.168.1.1" },
+			checkProto:   "http",
+			checkHost:    "example.com",
+		},
+		{
+			name:         "IPv6 address",
+			remoteAddr:   "[::1]:12345",
+			originalHost: "example.com",
+			checkXFF:     func(s string) bool { return s == "::1" },
+			checkProto:   "http",
+			checkHost:    "example.com",
+		},
+		{
+			name:         "with existing XFF",
+			remoteAddr:   "10.0.0.1:12345",
+			originalHost: "example.com",
+			xff:          "1.2.3.4",
+			checkXFF:     func(s string) bool { return strings.Contains(s, "1.2.3.4") && strings.Contains(s, "10.0.0.1") },
+			checkProto:   "http",
+			checkHost:    "example.com",
+		},
+		{
+			name:         "TLS connection",
+			remoteAddr:   "192.168.1.1:12345",
+			originalHost: "example.com",
+			tls:          true,
+			checkXFF:     func(s string) bool { return s == "192.168.1.1" },
+			checkProto:   "https",
+			checkHost:    "example.com",
+		},
+		{
+			name:         "with Host header",
+			remoteAddr:   "192.168.1.1:12345",
+			originalHost: "example.com",
+			hostHeader:   "custom.example.com",
+			checkXFF:     func(s string) bool { return s == "192.168.1.1" },
+			checkProto:   "http",
+			checkHost:    "custom.example.com",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			originalReq := httptest.NewRequest("GET", "/test", nil)
+			originalReq.RemoteAddr = tt.remoteAddr
+			originalReq.Host = tt.originalHost
+			if tt.hostHeader != "" {
+				originalReq.Header.Set("Host", tt.hostHeader)
+			}
+			if tt.tls {
+				originalReq.TLS = &tls.ConnectionState{}
+			}
+			if tt.xff != "" {
+				originalReq.Header.Set("X-Forwarded-For", tt.xff)
+			}
+
+			req := httptest.NewRequest("GET", "/test", nil)
+			proxy.setForwardedHeaders(req, originalReq)
+
+			if !tt.checkXFF(req.Header.Get("X-Forwarded-For")) {
+				t.Errorf("X-Forwarded-For = %s, check failed", req.Header.Get("X-Forwarded-For"))
+			}
+			if req.Header.Get("X-Forwarded-Proto") != tt.checkProto {
+				t.Errorf("X-Forwarded-Proto = %s, want %s", req.Header.Get("X-Forwarded-Proto"), tt.checkProto)
+			}
+			if req.Header.Get("X-Forwarded-Host") != tt.checkHost {
+				t.Errorf("X-Forwarded-Host = %s, want %s", req.Header.Get("X-Forwarded-Host"), tt.checkHost)
+			}
+		})
+	}
 }

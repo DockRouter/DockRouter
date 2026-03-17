@@ -127,4 +127,3 @@ func TestEngineHandleEventNonContainer(t *testing.T) {
 
 // Note: Start and health events require a valid Docker client because
 // onContainerStart calls InspectContainer. These cannot be tested with nil client.
-

@@ -12,23 +12,23 @@ func TestIsStartEvent(t *testing.T) {
 		expected bool
 	}{
 		{
-			name: "start event",
-			event: Event{Type: "container", Action: "start"},
+			name:     "start event",
+			event:    Event{Type: "container", Action: "start"},
 			expected: true,
 		},
 		{
-			name: "stop event",
-			event: Event{Type: "container", Action: "stop"},
+			name:     "stop event",
+			event:    Event{Type: "container", Action: "stop"},
 			expected: false,
 		},
 		{
-			name: "die event",
-			event: Event{Type: "container", Action: "die"},
+			name:     "die event",
+			event:    Event{Type: "container", Action: "die"},
 			expected: false,
 		},
 		{
-			name: "non-container event",
-			event: Event{Type: "image", Action: "start"},
+			name:     "non-container event",
+			event:    Event{Type: "image", Action: "start"},
 			expected: false,
 		},
 	}
@@ -50,23 +50,23 @@ func TestIsStopEvent(t *testing.T) {
 		expected bool
 	}{
 		{
-			name: "stop event",
-			event: Event{Type: "container", Action: "stop"},
+			name:     "stop event",
+			event:    Event{Type: "container", Action: "stop"},
 			expected: true,
 		},
 		{
-			name: "die event",
-			event: Event{Type: "container", Action: "die"},
+			name:     "die event",
+			event:    Event{Type: "container", Action: "die"},
 			expected: true,
 		},
 		{
-			name: "start event",
-			event: Event{Type: "container", Action: "start"},
+			name:     "start event",
+			event:    Event{Type: "container", Action: "start"},
 			expected: false,
 		},
 		{
-			name: "non-container event",
-			event: Event{Type: "network", Action: "stop"},
+			name:     "non-container event",
+			event:    Event{Type: "network", Action: "stop"},
 			expected: false,
 		},
 	}
@@ -88,18 +88,18 @@ func TestIsHealthEvent(t *testing.T) {
 		expected bool
 	}{
 		{
-			name: "health_status event",
-			event: Event{Type: "container", Action: "health_status"},
+			name:     "health_status event",
+			event:    Event{Type: "container", Action: "health_status"},
 			expected: true,
 		},
 		{
-			name: "start event",
-			event: Event{Type: "container", Action: "start"},
+			name:     "start event",
+			event:    Event{Type: "container", Action: "start"},
 			expected: false,
 		},
 		{
-			name: "non-container event",
-			event: Event{Type: "volume", Action: "health_status"},
+			name:     "non-container event",
+			event:    Event{Type: "volume", Action: "health_status"},
 			expected: false,
 		},
 	}

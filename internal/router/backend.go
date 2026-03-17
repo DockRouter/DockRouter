@@ -15,7 +15,24 @@ const (
 	Random
 	IPHash
 	LeastConn
+	WeightedRoundRobin
 )
+
+// ParseLoadBalanceStrategy converts a string to LoadBalanceStrategy
+func ParseLoadBalanceStrategy(s string) LoadBalanceStrategy {
+	switch s {
+	case "iphash":
+		return IPHash
+	case "leastconn":
+		return LeastConn
+	case "weighted":
+		return WeightedRoundRobin
+	case "random":
+		return Random
+	default:
+		return RoundRobin
+	}
+}
 
 // BackendPool manages multiple backend targets
 type BackendPool struct {
@@ -104,6 +121,8 @@ func (p *BackendPool) Select(clientIP string) *BackendTarget {
 		return p.selectIPHash(healthy, clientIP)
 	case LeastConn:
 		return p.selectLeastConn(healthy)
+	case WeightedRoundRobin:
+		return p.selectWeightedRoundRobin(healthy)
 	default:
 		return p.selectRoundRobin(healthy)
 	}
@@ -144,6 +163,39 @@ func (p *BackendPool) selectLeastConn(targets []*BackendTarget) *BackendTarget {
 	}
 
 	return selected
+}
+
+// selectWeightedRoundRobin selects using weighted round-robin
+// Each backend gets selections proportional to its weight
+func (p *BackendPool) selectWeightedRoundRobin(targets []*BackendTarget) *BackendTarget {
+	if len(targets) == 0 {
+		return nil
+	}
+
+	// Calculate total weight
+	totalWeight := 0
+	for _, t := range targets {
+		if t.Weight <= 0 {
+			t.Weight = 1 // Default weight
+		}
+		totalWeight += t.Weight
+	}
+
+	// Use counter to select based on weight distribution
+	idx := atomic.AddUint64(&p.rrCounter, 1) - 1
+	pos := int(idx % uint64(totalWeight))
+
+	// Find which backend this position maps to
+	cumulative := 0
+	for _, t := range targets {
+		cumulative += t.Weight
+		if pos < cumulative {
+			return t
+		}
+	}
+
+	// Fallback to first
+	return targets[0]
 }
 
 // MarkHealthy marks a backend as healthy

@@ -17,13 +17,13 @@ type Checker struct {
 
 // HealthCheck represents a single backend health check
 type HealthCheck struct {
-	Target    string
-	Path      string
-	Interval  time.Duration
-	Timeout   time.Duration
-	Threshold int
-	Recovery  int
-	State     HealthState
+	Target     string
+	Path       string
+	Interval   time.Duration
+	Timeout    time.Duration
+	Threshold  int
+	Recovery   int
+	State      HealthState
 	ConsecFail int
 	ConsecPass int
 }

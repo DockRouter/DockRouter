@@ -78,6 +78,12 @@ lint:
 	@which golangci-lint > /dev/null || go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	golangci-lint run ./...
 
+## staticcheck: Run staticcheck
+staticcheck:
+	@echo "Running staticcheck..."
+	@which staticcheck > /dev/null || go install honnef.co/go/tools/cmd/staticcheck@latest
+	staticcheck ./...
+
 ## vet: Run go vet
 vet:
 	@echo "Running go vet..."

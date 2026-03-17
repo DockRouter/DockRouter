@@ -84,3 +84,7 @@ desktop.ini
 # ===========================================
 /website/dist/
 /website/.cache/
+
+
+cover
+*.out

@@ -33,9 +33,9 @@ func (b *RouteMiddlewareBuilder) BuildChain(route *Route, next http.Handler) htt
 	// Apply CORS
 	if route.MiddlewareConfig.CORS.Enabled {
 		corsConfig := middleware.CORSConfig{
-			Origins:   route.MiddlewareConfig.CORS.Origins,
-			Methods:   route.MiddlewareConfig.CORS.Methods,
-			Headers:   route.MiddlewareConfig.CORS.Headers,
+			Origins: route.MiddlewareConfig.CORS.Origins,
+			Methods: route.MiddlewareConfig.CORS.Methods,
+			Headers: route.MiddlewareConfig.CORS.Headers,
 		}
 		chain = middleware.CORS(corsConfig)(chain)
 	}

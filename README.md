@@ -6,6 +6,7 @@
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://golang.org/dl/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker)](https://hub.docker.com/r/dockrouter/dockrouter)
 [![GitHub Release](https://img.shields.io/github/v/release/DockRouter/dockrouter?include_prereleases)](https://github.com/DockRouter/dockrouter/releases)
+[![Coverage](https://img.shields.io/badge/Coverage-87.0%25-brightgreen)](.)
 
 ---
 
@@ -152,8 +153,8 @@ volumes:
 | `dr.path` | `/` | Path prefix for routing |
 | `dr.priority` | `0` | Route priority (higher wins) |
 | `dr.address` | Auto | Explicit backend address |
-| `dr.loadbalancer` | `roundrobin` | LB strategy: `roundrobin`, `iphash` |
-| `dr.weight` | `1` | Backend weight for weighted LB |
+| `dr.loadbalancer` | `roundrobin` | LB strategy: `roundrobin`, `iphash`, `leastconn`, `weighted` |
+| `dr.weight` | `1` | Backend weight (used with `weighted` strategy) |
 
 ### TLS Labels
 
@@ -426,20 +427,20 @@ docker run -d \
 
 ```
 dockrouter/
-├── cmd/dockrouter/          # Main application
+├── cmd/dockrouter/          # Main application (76.2% coverage)
 │   ├── main.go              # Entry point
 │   └── dashboard/           # Admin dashboard
 ├── internal/
-│   ├── admin/               # Admin server (100% test coverage)
-│   ├── config/              # Configuration
-│   ├── discovery/           # Docker discovery
-│   ├── health/              # Health checking
-│   ├── log/                 # Logging
-│   ├── metrics/             # Prometheus metrics
-│   ├── middleware/          # HTTP middleware
-│   ├── proxy/               # Reverse proxy
-│   ├── router/              # Route management
-│   └── tls/                 # TLS/ACME
+│   ├── admin/               # Admin server (98.5% coverage)
+│   ├── config/              # Configuration (95.6% coverage)
+│   ├── discovery/           # Docker discovery (70.4% coverage)
+│   ├── health/              # Health checking (100% coverage)
+│   ├── log/                 # Logging (100% coverage)
+│   ├── metrics/             # Prometheus metrics (100% coverage)
+│   ├── middleware/          # HTTP middleware (97.2% coverage)
+│   ├── proxy/               # Reverse proxy (89.6% coverage)
+│   ├── router/              # Route management (98.2% coverage)
+│   └── tls/                 # TLS/ACME (80.5% coverage)
 ├── examples/                # Example configurations
 ├── scripts/                 # Build scripts
 ├── Dockerfile               # Multi-stage Docker build
@@ -447,6 +448,8 @@ dockrouter/
 ├── Makefile                 # Build automation
 └── README.md                # This file
 ```
+
+**Overall test coverage: 87.1%**
 
 ---
 

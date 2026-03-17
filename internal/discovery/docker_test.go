@@ -10,19 +10,19 @@ import (
 
 func TestNewDockerClient(t *testing.T) {
 	tests := []struct {
-		name      string
+		name       string
 		socketPath string
-		expected  string
+		expected   string
 	}{
 		{
-			name:      "default socket path",
+			name:       "default socket path",
 			socketPath: "",
-			expected:  "/var/run/docker.sock",
+			expected:   "/var/run/docker.sock",
 		},
 		{
-			name:      "custom socket path",
+			name:       "custom socket path",
 			socketPath: "/custom/docker.sock",
-			expected:  "/custom/docker.sock",
+			expected:   "/custom/docker.sock",
 		},
 	}
 
@@ -212,13 +212,13 @@ func TestUnixReadCloser(t *testing.T) {
 
 func TestContainerStruct(t *testing.T) {
 	c := Container{
-		ID:      "abc123def456",
-		Names:   []string{"/my-container"},
-		Image:   "nginx:latest",
-		State:   "running",
-		Status:  "Up 2 hours",
-		Labels:  map[string]string{"dr.enable": "true"},
-		Ports:   []PortBinding{{PrivatePort: 80, PublicPort: 8080, Type: "tcp"}},
+		ID:     "abc123def456",
+		Names:  []string{"/my-container"},
+		Image:  "nginx:latest",
+		State:  "running",
+		Status: "Up 2 hours",
+		Labels: map[string]string{"dr.enable": "true"},
+		Ports:  []PortBinding{{PrivatePort: 80, PublicPort: 8080, Type: "tcp"}},
 	}
 
 	if c.ID != "abc123def456" {
@@ -460,12 +460,12 @@ func (e *errorReaderCloser) Close() error {
 // mockConn implements net.Conn for testing
 type mockConn struct{}
 
-func (m *mockConn) Read(b []byte) (n int, err error)  { return 0, nil }
-func (m *mockConn) Write(b []byte) (n int, err error) { return len(b), nil }
+func (m *mockConn) Read(b []byte) (n int, err error)   { return 0, nil }
+func (m *mockConn) Write(b []byte) (n int, err error)  { return len(b), nil }
 func (m *mockConn) Close() error                       { return nil }
-func (m *mockConn) LocalAddr() net.Addr               { return nil }
-func (m *mockConn) RemoteAddr() net.Addr              { return nil }
-func (m *mockConn) SetDeadline(t time.Time) error     { return nil }
+func (m *mockConn) LocalAddr() net.Addr                { return nil }
+func (m *mockConn) RemoteAddr() net.Addr               { return nil }
+func (m *mockConn) SetDeadline(t time.Time) error      { return nil }
 func (m *mockConn) SetReadDeadline(t time.Time) error  { return nil }
 func (m *mockConn) SetWriteDeadline(t time.Time) error { return nil }
 
@@ -659,7 +659,7 @@ func TestPortMapStruct(t *testing.T) {
 
 func TestSubnetStruct(t *testing.T) {
 	subnet := Subnet{
-		Subnet: "172.17.0.0/16",
+		Subnet:  "172.17.0.0/16",
 		Gateway: "172.17.0.1",
 	}
 

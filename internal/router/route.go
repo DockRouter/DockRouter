@@ -66,10 +66,10 @@ type RateLimitConfig struct {
 
 // CORSConfig holds CORS configuration
 type CORSConfig struct {
-	Enabled    bool
-	Origins    []string
-	Methods    []string
-	Headers    []string
+	Enabled bool
+	Origins []string
+	Methods []string
+	Headers []string
 }
 
 // BasicAuthUser holds basic auth credentials
@@ -106,7 +106,7 @@ func (t *TLSConfig) IsAuto() bool {
 // RouteStore manages all routes
 type RouteStore struct {
 	mu     sync.RWMutex
-	routes map[string]*Route  // by ID
+	routes map[string]*Route   // by ID
 	byHost map[string][]*Route // by host
 }
 

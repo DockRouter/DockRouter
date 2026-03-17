@@ -213,12 +213,12 @@ func (c *DockerClient) ListAllContainers(ctx context.Context) ([]Container, erro
 
 // ContainerDetail represents detailed container info
 type ContainerDetail struct {
-	ID         string                 `json:"Id"`
-	Name       string                 `json:"Name"`
-	State      ContainerState         `json:"State"`
-	Config     ContainerConfig        `json:"Config"`
-	Network    ContainerNetwork       `json:"NetworkSettings"`
-	HostConfig ContainerHostConfig    `json:"HostConfig"`
+	ID         string              `json:"Id"`
+	Name       string              `json:"Name"`
+	State      ContainerState      `json:"State"`
+	Config     ContainerConfig     `json:"Config"`
+	Network    ContainerNetwork    `json:"NetworkSettings"`
+	HostConfig ContainerHostConfig `json:"HostConfig"`
 }
 
 // ContainerState holds container state info
@@ -238,9 +238,9 @@ type ContainerConfig struct {
 
 // ContainerNetwork holds network settings
 type ContainerNetwork struct {
-	Networks map[string]NetworkInfo `json:"Networks"`
-	Ports    PortMap                `json:"Ports"`
-	IPAddress string                `json:"IPAddress"`
+	Networks  map[string]NetworkInfo `json:"Networks"`
+	Ports     PortMap                `json:"Ports"`
+	IPAddress string                 `json:"IPAddress"`
 }
 
 // NetworkInfo contains container network details
@@ -276,11 +276,11 @@ func (c *DockerClient) InspectContainer(ctx context.Context, id string) (*Contai
 
 // Event represents a Docker container event
 type Event struct {
-	Type      string          `json:"Type"`
-	Action    string          `json:"Action"`
-	Actor     EventActor      `json:"Actor"`
-	Time      int64           `json:"time"`
-	TimeNano  int64           `json:"timeNano,omitempty"`
+	Type     string     `json:"Type"`
+	Action   string     `json:"Action"`
+	Actor    EventActor `json:"Actor"`
+	Time     int64      `json:"time"`
+	TimeNano int64      `json:"timeNano,omitempty"`
 }
 
 // EventActor holds the actor info in an event
@@ -345,7 +345,7 @@ type Network struct {
 
 // Subnet holds network subnet info
 type Subnet struct {
-	Subnet string `json:"Subnet"`
+	Subnet  string `json:"Subnet"`
 	Gateway string `json:"Gateway"`
 }
 

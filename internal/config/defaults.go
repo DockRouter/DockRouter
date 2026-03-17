@@ -51,6 +51,8 @@ func (c *Config) applyDefaults() {
 
 	c.ACMEProvider = "letsencrypt"
 	c.ACMEStaging = false
+
+	c.WebhookRetryCount = 3
 }
 
 // GetACMEDirectoryURL returns the ACME directory URL based on provider and staging settings

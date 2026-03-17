@@ -1,6 +1,7 @@
 package router
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -209,6 +210,7 @@ func TestLoadBalanceStrategyValues(t *testing.T) {
 		{Random, "Random"},
 		{IPHash, "IPHash"},
 		{LeastConn, "LeastConn"},
+		{WeightedRoundRobin, "WeightedRoundRobin"},
 	}
 
 	for _, tt := range tests {
@@ -230,6 +232,74 @@ func TestBackendPoolSelectRandom(t *testing.T) {
 	selected := pool.Select("")
 	if selected == nil {
 		t.Error("Select should not return nil")
+	}
+}
+
+func TestBackendPoolSelectWeightedRoundRobin(t *testing.T) {
+	pool := NewBackendPool(WeightedRoundRobin)
+	pool.Add(&BackendTarget{Address: "10.0.0.1:8080", Weight: 3, Healthy: true})
+	pool.Add(&BackendTarget{Address: "10.0.0.2:8080", Weight: 1, Healthy: true})
+
+	// Run many selections and count distribution
+	counts := make(map[string]int)
+	for i := 0; i < 100; i++ {
+		selected := pool.Select("")
+		if selected == nil {
+			t.Fatal("Select should not return nil")
+		}
+		counts[selected.Address]++
+	}
+
+	// With weights 3:1, first backend should get ~75% of requests
+	// Allow some variance: 60-90% range
+	ratio := float64(counts["10.0.0.1:8080"]) / 100.0
+	if ratio < 0.60 || ratio > 0.90 {
+		t.Errorf("Weighted distribution off: backend1 got %.2f%% (expected ~75%%)", ratio*100)
+	}
+}
+
+func TestBackendPoolSelectWeightedRoundRobinEqualWeights(t *testing.T) {
+	pool := NewBackendPool(WeightedRoundRobin)
+	pool.Add(&BackendTarget{Address: "10.0.0.1:8080", Weight: 1, Healthy: true})
+	pool.Add(&BackendTarget{Address: "10.0.0.2:8080", Weight: 1, Healthy: true})
+
+	// With equal weights, distribution should be ~50/50
+	counts := make(map[string]int)
+	for i := 0; i < 100; i++ {
+		selected := pool.Select("")
+		counts[selected.Address]++
+	}
+
+	// Each should get ~50%, allow 40-60% range
+	for addr, count := range counts {
+		ratio := float64(count) / 100.0
+		if ratio < 0.40 || ratio > 0.60 {
+			t.Errorf("Equal weight distribution off: %s got %.2f%% (expected ~50%%)", addr, ratio*100)
+		}
+	}
+}
+
+func TestParseLoadBalanceStrategy(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected LoadBalanceStrategy
+	}{
+		{"roundrobin", RoundRobin},
+		{"iphash", IPHash},
+		{"leastconn", LeastConn},
+		{"weighted", WeightedRoundRobin},
+		{"random", Random},
+		{"unknown", RoundRobin},
+		{"", RoundRobin},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := ParseLoadBalanceStrategy(tt.input)
+			if result != tt.expected {
+				t.Errorf("ParseLoadBalanceStrategy(%q) = %d, want %d", tt.input, result, tt.expected)
+			}
+		})
 	}
 }
 
@@ -489,5 +559,280 @@ func TestTableCount(t *testing.T) {
 	table.Remove("route-1")
 	if table.Count() != 0 {
 		t.Errorf("Count after remove = %d, want 0", table.Count())
+	}
+}
+
+func TestTableRemoveWildcardRoute(t *testing.T) {
+	table := NewTable()
+
+	// Add a wildcard route
+	table.Add(&Route{
+		ID:         "wildcard-remove-test",
+		Host:       "*.removetest.com",
+		PathPrefix: "/api",
+	})
+
+	if table.Count() != 1 {
+		t.Errorf("Count = %d, want 1", table.Count())
+	}
+
+	// Verify it matches
+	route := table.Match("sub.removetest.com", "/api")
+	if route == nil {
+		t.Fatal("Route should match wildcard pattern")
+	}
+
+	// Remove the wildcard route
+	table.Remove("wildcard-remove-test")
+
+	if table.Count() != 0 {
+		t.Errorf("Count after remove = %d, want 0", table.Count())
+	}
+
+	// Verify it no longer matches
+	route = table.Match("sub.removetest.com", "/api")
+	if route != nil {
+		t.Error("Route should no longer match after removal")
+	}
+}
+
+func TestTableRemoveExactRouteWithWildcardPresent(t *testing.T) {
+	table := NewTable()
+
+	// Add both exact and wildcard routes
+	table.Add(&Route{ID: "exact-1", Host: "api.example.com", PathPrefix: "/"})
+	table.Add(&Route{ID: "wild-1", Host: "*.example.com", PathPrefix: "/"})
+
+	if table.Count() != 2 {
+		t.Errorf("Count = %d, want 2", table.Count())
+	}
+
+	// Remove exact route - should only remove from exact tree
+	table.Remove("exact-1")
+
+	if table.Count() != 1 {
+		t.Errorf("Count after remove = %d, want 1", table.Count())
+	}
+
+	// Wildcard should still match
+	route := table.Match("api.example.com", "/")
+	if route == nil {
+		t.Fatal("Wildcard should still match")
+	}
+	if route.ID != "wild-1" {
+		t.Errorf("Route ID = %s, want wild-1", route.ID)
+	}
+}
+
+func TestTableRemoveByContainerWithWildcard(t *testing.T) {
+	table := NewTable()
+
+	// Add a wildcard route with container ID
+	table.Add(&Route{
+		ID:          "wild-container-test",
+		Host:        "*.container.com",
+		PathPrefix:  "/",
+		ContainerID: "container-123",
+	})
+
+	if table.Count() != 1 {
+		t.Errorf("Count = %d, want 1", table.Count())
+	}
+
+	// Remove by container ID
+	table.RemoveByContainer("container-123")
+
+	if table.Count() != 0 {
+		t.Errorf("Count = %d, want 0", table.Count())
+	}
+}
+
+func TestTableListByHostWithWildcard(t *testing.T) {
+	table := NewTable()
+
+	// Add a wildcard route
+	table.Add(&Route{
+		ID:         "wildcard-route",
+		Host:       "*.example.com",
+		PathPrefix: "/",
+	})
+
+	// Add an exact route
+	table.Add(&Route{
+		ID:         "exact-route",
+		Host:       "api.example.com",
+		PathPrefix: "/",
+	})
+
+	// Test ListByHost with a host that matches the wildcard
+	routes := table.ListByHost("sub.example.com")
+	if len(routes) != 1 {
+		t.Errorf("ListByHost(sub.example.com) = %d routes, want 1 (wildcard match)", len(routes))
+	} else if routes[0].ID != "wildcard-route" {
+		t.Errorf("Route ID = %s, want wildcard-route", routes[0].ID)
+	}
+
+	// Test ListByHost with exact match host
+	routes = table.ListByHost("api.example.com")
+	if len(routes) != 2 {
+		t.Errorf("ListByHost(api.example.com) = %d routes, want 2 (exact + wildcard)", len(routes))
+	}
+
+	// Test ListByHost with non-matching host
+	routes = table.ListByHost("other.com")
+	if len(routes) != 0 {
+		t.Errorf("ListByHost(other.com) = %d routes, want 0", len(routes))
+	}
+}
+
+func TestTableAddWithEmptyPath(t *testing.T) {
+	table := NewTable()
+
+	// Add a route with empty PathPrefix - should be normalized to "/"
+	table.Add(&Route{
+		ID:         "empty-path-route",
+		Host:       "example.com",
+		PathPrefix: "",
+	})
+
+	// Verify route can be matched at "/"
+	route := table.Match("example.com", "/")
+	if route == nil {
+		t.Fatal("Should match route with empty PathPrefix at /")
+	}
+	if route.ID != "empty-path-route" {
+		t.Errorf("Route ID = %s, want empty-path-route", route.ID)
+	}
+}
+
+func TestTableRemoveWithEmptyPath(t *testing.T) {
+	table := NewTable()
+
+	// Add a route with empty PathPrefix
+	table.Add(&Route{
+		ID:         "remove-empty-path",
+		Host:       "example.com",
+		PathPrefix: "",
+	})
+
+	if table.Count() != 1 {
+		t.Fatalf("Count = %d, want 1", table.Count())
+	}
+
+	// Remove the route - empty path should be normalized to "/"
+	table.Remove("remove-empty-path")
+
+	if table.Count() != 0 {
+		t.Errorf("Count = %d, want 0 after remove", table.Count())
+	}
+}
+
+func TestTableRemoveWildcardWithEmptyPath(t *testing.T) {
+	table := NewTable()
+
+	// Add a wildcard route with empty PathPrefix
+	table.Add(&Route{
+		ID:         "wildcard-empty-path",
+		Host:       "*.example.com",
+		PathPrefix: "",
+	})
+
+	if table.Count() != 1 {
+		t.Fatalf("Count = %d, want 1", table.Count())
+	}
+
+	// Remove the route
+	table.Remove("wildcard-empty-path")
+
+	if table.Count() != 0 {
+		t.Errorf("Count = %d, want 0 after remove", table.Count())
+	}
+}
+
+// Benchmarks
+
+func BenchmarkBackendPoolSelectRoundRobin(b *testing.B) {
+	pool := NewBackendPool(RoundRobin)
+	for i := 0; i < 10; i++ {
+		pool.Add(&BackendTarget{
+			Address: fmt.Sprintf("10.0.0.%d:8080", i+1),
+			Healthy: true,
+			Weight:  1,
+		})
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = pool.Select("192.168.1.1:12345")
+	}
+}
+
+func BenchmarkBackendPoolSelectIPHash(b *testing.B) {
+	pool := NewBackendPool(IPHash)
+	for i := 0; i < 10; i++ {
+		pool.Add(&BackendTarget{
+			Address: fmt.Sprintf("10.0.0.%d:8080", i+1),
+			Healthy: true,
+		})
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = pool.Select(fmt.Sprintf("192.168.1.%d:12345", i%256))
+	}
+}
+
+func BenchmarkBackendPoolSelectLeastConn(b *testing.B) {
+	pool := NewBackendPool(LeastConn)
+	for i := 0; i < 10; i++ {
+		pool.Add(&BackendTarget{
+			Address: fmt.Sprintf("10.0.0.%d:8080", i+1),
+			Healthy: true,
+		})
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = pool.Select("192.168.1.1:12345")
+	}
+}
+
+func BenchmarkBackendPoolSelectWeighted(b *testing.B) {
+	pool := NewBackendPool(WeightedRoundRobin)
+	pool.Add(&BackendTarget{Address: "10.0.0.1:8080", Healthy: true, Weight: 5})
+	pool.Add(&BackendTarget{Address: "10.0.0.2:8080", Healthy: true, Weight: 3})
+	pool.Add(&BackendTarget{Address: "10.0.0.3:8080", Healthy: true, Weight: 2})
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = pool.Select("192.168.1.1:12345")
+	}
+}
+
+func BenchmarkParseLoadBalanceStrategy(b *testing.B) {
+	strategies := []string{"roundrobin", "iphash", "leastconn", "weighted", "unknown"}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = ParseLoadBalanceStrategy(strategies[i%len(strategies)])
+	}
+}
+
+func BenchmarkTableMatch(b *testing.B) {
+	table := NewTable()
+
+	// Add routes
+	for i := 0; i < 100; i++ {
+		table.Add(&Route{
+			ID:         fmt.Sprintf("route-%d", i),
+			Host:       fmt.Sprintf("app%d.example.com", i),
+			PathPrefix: "/",
+			Backend:    NewBackendPool(RoundRobin),
+		})
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = table.Match(fmt.Sprintf("app%d.example.com", i%100), "/")
 	}
 }

@@ -13,9 +13,9 @@ import (
 
 func TestNewACMEClient(t *testing.T) {
 	tests := []struct {
-		name    string
-		url     string
-		email   string
+		name  string
+		url   string
+		email string
 	}{
 		{
 			name:  "Let's Encrypt production",

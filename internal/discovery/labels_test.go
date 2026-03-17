@@ -8,10 +8,10 @@ import (
 
 func TestParseLabels(t *testing.T) {
 	tests := []struct {
-		name     string
-		labels   map[string]string
-		enabled  bool
-		host     string
+		name    string
+		labels  map[string]string
+		enabled bool
+		host    string
 	}{
 		{
 			name:    "disabled",
@@ -88,10 +88,10 @@ func TestParseLabelsRouting(t *testing.T) {
 
 func TestParseLabelsTLS(t *testing.T) {
 	labels := map[string]string{
-		"dr.enable":        "true",
-		"dr.host":          "example.com",
-		"dr.tls":           "auto",
-		"dr.tls.domains":   "www.example.com,example.com",
+		"dr.enable":      "true",
+		"dr.host":        "example.com",
+		"dr.tls":         "auto",
+		"dr.tls.domains": "www.example.com,example.com",
 	}
 
 	config := ParseLabels(labels)
@@ -106,9 +106,9 @@ func TestParseLabelsTLS(t *testing.T) {
 
 func TestParseLabelsRateLimit(t *testing.T) {
 	labels := map[string]string{
-		"dr.enable":      "true",
-		"dr.host":        "example.com",
-		"dr.ratelimit":   "100/m",
+		"dr.enable":       "true",
+		"dr.host":         "example.com",
+		"dr.ratelimit":    "100/m",
 		"dr.ratelimit.by": "X-API-Key",
 	}
 
@@ -127,10 +127,10 @@ func TestParseLabelsRateLimit(t *testing.T) {
 
 func TestParseLabelsCORS(t *testing.T) {
 	labels := map[string]string{
-		"dr.enable":         "true",
-		"dr.host":           "example.com",
-		"dr.cors.origins":   "https://app.com,https://web.com",
-		"dr.cors.methods":   "GET,POST",
+		"dr.enable":       "true",
+		"dr.host":         "example.com",
+		"dr.cors.origins": "https://app.com,https://web.com",
+		"dr.cors.methods": "GET,POST",
 	}
 
 	config := ParseLabels(labels)
@@ -204,6 +204,66 @@ func TestConfigValidate(t *testing.T) {
 			config:  &RouteConfig{Enabled: true, Host: "example.com", TLS: "invalid"},
 			wantErr: true,
 		},
+		{
+			name:    "host with port",
+			config:  &RouteConfig{Enabled: true, Host: "example.com:8080", TLS: "auto"},
+			wantErr: true,
+		},
+		{
+			name:    "path without leading slash",
+			config:  &RouteConfig{Enabled: true, Host: "example.com", Path: "api/v1", TLS: "auto"},
+			wantErr: true,
+		},
+		{
+			name:    "path with leading slash valid",
+			config:  &RouteConfig{Enabled: true, Host: "example.com", Path: "/api/v1", TLS: "auto"},
+			wantErr: false,
+		},
+		{
+			name:    "empty path valid",
+			config:  &RouteConfig{Enabled: true, Host: "example.com", Path: "", TLS: "auto"},
+			wantErr: false,
+		},
+		{
+			name:    "manual TLS with cert and key",
+			config:  &RouteConfig{Enabled: true, Host: "example.com", TLS: "manual", TLSCertFile: "/certs/cert.pem", TLSKeyFile: "/certs/key.pem"},
+			wantErr: false,
+		},
+		{
+			name:    "manual TLS missing cert",
+			config:  &RouteConfig{Enabled: true, Host: "example.com", TLS: "manual", TLSCertFile: "", TLSKeyFile: "/certs/key.pem"},
+			wantErr: true,
+		},
+		{
+			name:    "manual TLS missing key",
+			config:  &RouteConfig{Enabled: true, Host: "example.com", TLS: "manual", TLSCertFile: "/certs/cert.pem", TLSKeyFile: ""},
+			wantErr: true,
+		},
+		{
+			name:    "manual TLS missing both",
+			config:  &RouteConfig{Enabled: true, Host: "example.com", TLS: "manual", TLSCertFile: "", TLSKeyFile: ""},
+			wantErr: true,
+		},
+		{
+			name:    "TLS off valid",
+			config:  &RouteConfig{Enabled: true, Host: "example.com", TLS: "off"},
+			wantErr: false,
+		},
+		{
+			name:    "TLS case insensitive auto",
+			config:  &RouteConfig{Enabled: true, Host: "example.com", TLS: "AUTO"},
+			wantErr: false,
+		},
+		{
+			name:    "TLS case insensitive manual",
+			config:  &RouteConfig{Enabled: true, Host: "example.com", TLS: "MANUAL", TLSCertFile: "/certs/cert.pem", TLSKeyFile: "/certs/key.pem"},
+			wantErr: false,
+		},
+		{
+			name:    "TLS case insensitive off",
+			config:  &RouteConfig{Enabled: true, Host: "example.com", TLS: "OFF"},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -230,36 +290,36 @@ func TestParseLabelsBasicAuth(t *testing.T) {
 		{
 			name: "single user",
 			labels: map[string]string{
-				"dr.enable":             "true",
-				"dr.host":               "example.com",
-				"dr.auth.basic.users":   "admin:$2a$10$hash",
+				"dr.enable":           "true",
+				"dr.host":             "example.com",
+				"dr.auth.basic.users": "admin:$2a$10$hash",
 			},
 			expectedUsers: 1,
 		},
 		{
 			name: "multiple users",
 			labels: map[string]string{
-				"dr.enable":             "true",
-				"dr.host":               "example.com",
-				"dr.auth.basic.users":   "admin:$2a$10$hash1,user:$2a$10$hash2",
+				"dr.enable":           "true",
+				"dr.host":             "example.com",
+				"dr.auth.basic.users": "admin:$2a$10$hash1,user:$2a$10$hash2",
 			},
 			expectedUsers: 2,
 		},
 		{
 			name: "malformed user (no colon)",
 			labels: map[string]string{
-				"dr.enable":             "true",
-				"dr.host":               "example.com",
-				"dr.auth.basic.users":   "admininvalid",
+				"dr.enable":           "true",
+				"dr.host":             "example.com",
+				"dr.auth.basic.users": "admininvalid",
 			},
 			expectedUsers: 0,
 		},
 		{
 			name: "empty users label",
 			labels: map[string]string{
-				"dr.enable":             "true",
-				"dr.host":               "example.com",
-				"dr.auth.basic.users":   "",
+				"dr.enable":           "true",
+				"dr.host":             "example.com",
+				"dr.auth.basic.users": "",
 			},
 			expectedUsers: 0,
 		},
@@ -294,9 +354,9 @@ func TestParseLabelsIPFilters(t *testing.T) {
 		{
 			name: "CIDR whitelist",
 			labels: map[string]string{
-				"dr.enable":       "true",
-				"dr.host":         "example.com",
-				"dr.ipwhitelist":  "192.168.1.0/24",
+				"dr.enable":      "true",
+				"dr.host":        "example.com",
+				"dr.ipwhitelist": "192.168.1.0/24",
 			},
 			expectedWhitelist: 1,
 			expectedBlacklist: 0,
@@ -304,9 +364,9 @@ func TestParseLabelsIPFilters(t *testing.T) {
 		{
 			name: "single IP whitelist",
 			labels: map[string]string{
-				"dr.enable":       "true",
-				"dr.host":         "example.com",
-				"dr.ipwhitelist":  "192.168.1.100",
+				"dr.enable":      "true",
+				"dr.host":        "example.com",
+				"dr.ipwhitelist": "192.168.1.100",
 			},
 			expectedWhitelist: 1,
 			expectedBlacklist: 0,
@@ -314,9 +374,9 @@ func TestParseLabelsIPFilters(t *testing.T) {
 		{
 			name: "multiple CIDRs",
 			labels: map[string]string{
-				"dr.enable":       "true",
-				"dr.host":         "example.com",
-				"dr.ipwhitelist":  "192.168.1.0/24,10.0.0.0/8",
+				"dr.enable":      "true",
+				"dr.host":        "example.com",
+				"dr.ipwhitelist": "192.168.1.0/24,10.0.0.0/8",
 			},
 			expectedWhitelist: 2,
 			expectedBlacklist: 0,
@@ -324,9 +384,9 @@ func TestParseLabelsIPFilters(t *testing.T) {
 		{
 			name: "blacklist only",
 			labels: map[string]string{
-				"dr.enable":       "true",
-				"dr.host":         "example.com",
-				"dr.ipblacklist":  "10.0.0.1",
+				"dr.enable":      "true",
+				"dr.host":        "example.com",
+				"dr.ipblacklist": "10.0.0.1",
 			},
 			expectedWhitelist: 0,
 			expectedBlacklist: 1,
@@ -334,10 +394,10 @@ func TestParseLabelsIPFilters(t *testing.T) {
 		{
 			name: "both whitelist and blacklist",
 			labels: map[string]string{
-				"dr.enable":       "true",
-				"dr.host":         "example.com",
-				"dr.ipwhitelist":  "192.168.0.0/16",
-				"dr.ipblacklist":  "10.0.0.0/8",
+				"dr.enable":      "true",
+				"dr.host":        "example.com",
+				"dr.ipwhitelist": "192.168.0.0/16",
+				"dr.ipblacklist": "10.0.0.0/8",
 			},
 			expectedWhitelist: 1,
 			expectedBlacklist: 1,
@@ -345,9 +405,9 @@ func TestParseLabelsIPFilters(t *testing.T) {
 		{
 			name: "invalid CIDR (ignored)",
 			labels: map[string]string{
-				"dr.enable":       "true",
-				"dr.host":         "example.com",
-				"dr.ipwhitelist":  "invalid-cidr",
+				"dr.enable":      "true",
+				"dr.host":        "example.com",
+				"dr.ipwhitelist": "invalid-cidr",
 			},
 			expectedWhitelist: 0,
 			expectedBlacklist: 0,
@@ -355,9 +415,9 @@ func TestParseLabelsIPFilters(t *testing.T) {
 		{
 			name: "IPv6 single address",
 			labels: map[string]string{
-				"dr.enable":       "true",
-				"dr.host":         "example.com",
-				"dr.ipwhitelist":  "::1",
+				"dr.enable":      "true",
+				"dr.host":        "example.com",
+				"dr.ipwhitelist": "::1",
 			},
 			expectedWhitelist: 1,
 			expectedBlacklist: 0,
@@ -395,9 +455,9 @@ func TestParseLabelsCircuitBreaker(t *testing.T) {
 		{
 			name: "circuit breaker with defaults",
 			labels: map[string]string{
-				"dr.enable":          "true",
-				"dr.host":            "example.com",
-				"dr.circuitbreaker":  "5/30s",
+				"dr.enable":         "true",
+				"dr.host":           "example.com",
+				"dr.circuitbreaker": "5/30s",
 			},
 			expectEnabled: true,
 			expectFails:   5,
@@ -405,9 +465,9 @@ func TestParseLabelsCircuitBreaker(t *testing.T) {
 		{
 			name: "circuit breaker empty",
 			labels: map[string]string{
-				"dr.enable":          "true",
-				"dr.host":            "example.com",
-				"dr.circuitbreaker":  "",
+				"dr.enable":         "true",
+				"dr.host":           "example.com",
+				"dr.circuitbreaker": "",
 			},
 			expectEnabled: false,
 		},
@@ -431,9 +491,9 @@ func TestParseLabelsCircuitBreaker(t *testing.T) {
 
 func TestParseLabelsRetry(t *testing.T) {
 	labels := map[string]string{
-		"dr.enable":   "true",
-		"dr.host":     "example.com",
-		"dr.retry":    "3",
+		"dr.enable": "true",
+		"dr.host":   "example.com",
+		"dr.retry":  "3",
 	}
 
 	config := ParseLabels(labels)
@@ -447,9 +507,9 @@ func TestParseLabelsRetry(t *testing.T) {
 
 func TestParseLabelsCompress(t *testing.T) {
 	labels := map[string]string{
-		"dr.enable":    "true",
-		"dr.host":      "example.com",
-		"dr.compress":  "true",
+		"dr.enable":   "true",
+		"dr.host":     "example.com",
+		"dr.compress": "true",
 	}
 
 	config := ParseLabels(labels)
@@ -463,9 +523,9 @@ func TestParseLabelsCompress(t *testing.T) {
 
 func TestParseLabelsHealthCheck(t *testing.T) {
 	labels := map[string]string{
-		"dr.enable":             "true",
-		"dr.host":               "example.com",
-		"dr.healthcheck.path":   "/health",
+		"dr.enable":               "true",
+		"dr.host":                 "example.com",
+		"dr.healthcheck.path":     "/health",
 		"dr.healthcheck.interval": "30s",
 	}
 
@@ -480,9 +540,9 @@ func TestParseLabelsHealthCheck(t *testing.T) {
 
 func TestParseLabelsRedirectHTTPS(t *testing.T) {
 	labels := map[string]string{
-		"dr.enable":          "true",
-		"dr.host":            "example.com",
-		"dr.redirect.https":  "true",
+		"dr.enable":         "true",
+		"dr.host":           "example.com",
+		"dr.redirect.https": "true",
 	}
 
 	config := ParseLabels(labels)
@@ -683,9 +743,9 @@ func TestParseLabelsMaxBody(t *testing.T) {
 
 func TestParseLabelsRetryCount(t *testing.T) {
 	labels := map[string]string{
-		"dr.enable":  "true",
-		"dr.host":    "example.com",
-		"dr.retry":   "5",
+		"dr.enable": "true",
+		"dr.host":   "example.com",
+		"dr.retry":  "5",
 	}
 
 	config := ParseLabels(labels)
@@ -699,9 +759,9 @@ func TestParseLabelsRetryCount(t *testing.T) {
 
 func TestParseLabelsCircuitBreakerConfig(t *testing.T) {
 	labels := map[string]string{
-		"dr.enable":          "true",
-		"dr.host":            "example.com",
-		"dr.circuitbreaker":  "10/60s",
+		"dr.enable":         "true",
+		"dr.host":           "example.com",
+		"dr.circuitbreaker": "10/60s",
 	}
 
 	config := ParseLabels(labels)
@@ -718,9 +778,9 @@ func TestParseLabelsCircuitBreakerConfig(t *testing.T) {
 
 func TestParseLabelsIPBlacklist(t *testing.T) {
 	labels := map[string]string{
-		"dr.enable":       "true",
-		"dr.host":         "example.com",
-		"dr.ipblacklist":  "10.0.0.1,192.168.1.0/24",
+		"dr.enable":      "true",
+		"dr.host":        "example.com",
+		"dr.ipblacklist": "10.0.0.1,192.168.1.0/24",
 	}
 
 	config := ParseLabels(labels)
@@ -734,11 +794,11 @@ func TestParseLabelsIPBlacklist(t *testing.T) {
 
 func TestParseLabelsTLSCert(t *testing.T) {
 	labels := map[string]string{
-		"dr.enable":      "true",
-		"dr.host":        "example.com",
-		"dr.tls":         "manual",
-		"dr.tls.cert":    "/certs/example.com.crt",
-		"dr.tls.key":     "/certs/example.com.key",
+		"dr.enable":   "true",
+		"dr.host":     "example.com",
+		"dr.tls":      "manual",
+		"dr.tls.cert": "/certs/example.com.crt",
+		"dr.tls.key":  "/certs/example.com.key",
 	}
 
 	config := ParseLabels(labels)
@@ -859,6 +919,161 @@ func TestParseLabelsRateLimitWindows(t *testing.T) {
 				t.Errorf("RateLimit.Window = %v, want %v", config.RateLimit.Window, tt.expectedWindow)
 			}
 		})
+	}
+}
+
+func TestParseLabelsCORSWithHeaders(t *testing.T) {
+	labels := map[string]string{
+		"dr.enable":       "true",
+		"dr.host":         "example.com",
+		"dr.cors.origins": "https://app.com",
+		"dr.cors.headers": "X-Custom-Header,Authorization",
+	}
+
+	config := ParseLabels(labels)
+	if config == nil {
+		t.Fatal("ParseLabels returned nil")
+	}
+	if !config.CORS.Enabled {
+		t.Error("CORS should be enabled")
+	}
+	if len(config.CORS.Headers) != 2 {
+		t.Errorf("CORS headers count = %d, want 2", len(config.CORS.Headers))
+	}
+}
+
+func TestParseLabelsCORSDefaultMethods(t *testing.T) {
+	labels := map[string]string{
+		"dr.enable":       "true",
+		"dr.host":         "example.com",
+		"dr.cors.origins": "https://app.com",
+		// No dr.cors.methods - should use defaults
+	}
+
+	config := ParseLabels(labels)
+	if config == nil {
+		t.Fatal("ParseLabels returned nil")
+	}
+	if len(config.CORS.Methods) != 5 {
+		t.Errorf("CORS methods count = %d, want 5 (default)", len(config.CORS.Methods))
+	}
+}
+
+func TestParseSizeInvalid(t *testing.T) {
+	// Test invalid size format
+	result := parseSize("invalid")
+	if result != 0 {
+		t.Errorf("parseSize('invalid') = %d, want 0", result)
+	}
+
+	// Test empty string
+	result = parseSize("")
+	if result != 0 {
+		t.Errorf("parseSize('') = %d, want 0", result)
+	}
+}
+
+func TestParseIntInvalid(t *testing.T) {
+	// parseInt is not exported, test via ParseLabels
+	labels := map[string]string{
+		"dr.enable": "true",
+		"dr.host":   "example.com",
+		"dr.port":   "invalid",
+	}
+
+	config := ParseLabels(labels)
+	if config == nil {
+		t.Fatal("ParseLabels returned nil")
+	}
+	// Should use default (0) when parsing fails
+	if config.Port != 0 {
+		t.Errorf("Port = %d, want 0 (default for invalid)", config.Port)
+	}
+}
+
+func TestParseDurationInvalid(t *testing.T) {
+	// parseDuration is used in circuit breaker - test via labels
+	labels := map[string]string{
+		"dr.enable":         "true",
+		"dr.host":           "example.com",
+		"dr.circuitbreaker": "5/invalid",
+	}
+
+	config := ParseLabels(labels)
+	if config == nil {
+		t.Fatal("ParseLabels returned nil")
+	}
+	// Should use default duration when parsing fails
+	if config.CircuitBreaker.Window != 30*time.Second {
+		t.Errorf("CircuitBreaker.Window = %v, want 30s (default)", config.CircuitBreaker.Window)
+	}
+}
+
+func TestParseLabelsIPBlacklistIPv6(t *testing.T) {
+	labels := map[string]string{
+		"dr.enable":      "true",
+		"dr.host":        "example.com",
+		"dr.ipblacklist": "::1,2001:db8::/32",
+	}
+
+	config := ParseLabels(labels)
+	if config == nil {
+		t.Fatal("ParseLabels returned nil")
+	}
+	if len(config.IPBlacklist) != 2 {
+		t.Errorf("IPBlacklist count = %d, want 2", len(config.IPBlacklist))
+	}
+}
+
+func TestParseLabelsMiddlewares(t *testing.T) {
+	labels := map[string]string{
+		"dr.enable":      "true",
+		"dr.host":        "example.com",
+		"dr.middlewares": "ratelimit,compress,auth",
+	}
+
+	config := ParseLabels(labels)
+	if config == nil {
+		t.Fatal("ParseLabels returned nil")
+	}
+	if len(config.Middlewares) != 3 {
+		t.Errorf("Middlewares count = %d, want 3", len(config.Middlewares))
+	}
+	if config.Middlewares[0] != "ratelimit" {
+		t.Errorf("Middlewares[0] = %s, want ratelimit", config.Middlewares[0])
+	}
+}
+
+func TestParseLabelsRedirectHTTPSDefault(t *testing.T) {
+	labels := map[string]string{
+		"dr.enable":         "true",
+		"dr.host":           "example.com",
+		"dr.redirect.https": "false", // Explicitly disable
+	}
+
+	config := ParseLabels(labels)
+	if config == nil {
+		t.Fatal("ParseLabels returned nil")
+	}
+	if config.RedirectHTTPS {
+		t.Error("RedirectHTTPS should be false when explicitly set to false")
+	}
+}
+
+func TestParseLabelsRateLimitWithDefaultKey(t *testing.T) {
+	labels := map[string]string{
+		"dr.enable":    "true",
+		"dr.host":      "example.com",
+		"dr.ratelimit": "100/m",
+		// No dr.ratelimit.by - should default to client_ip
+	}
+
+	config := ParseLabels(labels)
+	if config == nil {
+		t.Fatal("ParseLabels returned nil")
+	}
+	if config.RateLimit.ByKey != "client_ip" {
+		t.Errorf("RateLimit.ByKey = %s, want client_ip (default)", config.RateLimit.ByKey)
 	}
 }
 

@@ -347,3 +347,98 @@ func TestRouterServeHTTPWithRequestID(t *testing.T) {
 		t.Error("Response should contain request ID")
 	}
 }
+
+func TestNewRouterWithMiddleware(t *testing.T) {
+	table := NewTable()
+	proxy := &mockProxy{}
+	logger := &mockRouterLogger{}
+	builder := NewRouteMiddlewareBuilder()
+
+	router := NewRouterWithMiddleware(table, proxy, logger, builder)
+	if router == nil {
+		t.Fatal("NewRouterWithMiddleware returned nil")
+	}
+	if router.table != table {
+		t.Error("table should be set correctly")
+	}
+	if router.proxy != proxy {
+		t.Error("proxy should be set correctly")
+	}
+	if router.logger != logger {
+		t.Error("logger should be set correctly")
+	}
+	if router.middlewareBuilder != builder {
+		t.Error("middlewareBuilder should be set correctly")
+	}
+	if router.maxRetries != 3 {
+		t.Errorf("maxRetries = %d, want 3", router.maxRetries)
+	}
+}
+
+func TestRouterSetMaxRetries(t *testing.T) {
+	table := NewTable()
+	proxy := &mockProxy{}
+	logger := &mockRouterLogger{}
+	router := NewRouter(table, proxy, logger)
+
+	// Test setting valid value
+	router.SetMaxRetries(10)
+	if router.maxRetries != 10 {
+		t.Errorf("maxRetries = %d, want 10", router.maxRetries)
+	}
+
+	// Test setting zero (should not change)
+	router.SetMaxRetries(0)
+	if router.maxRetries != 10 {
+		t.Errorf("maxRetries should not change when set to 0, got %d", router.maxRetries)
+	}
+
+	// Test setting negative (should not change)
+	router.SetMaxRetries(-5)
+	if router.maxRetries != 10 {
+		t.Errorf("maxRetries should not change when set to negative, got %d", router.maxRetries)
+	}
+}
+
+func TestRouterCleanupRoute(t *testing.T) {
+	table := NewTable()
+	proxy := &mockProxy{}
+	logger := &mockRouterLogger{}
+	builder := NewRouteMiddlewareBuilder()
+	router := NewRouterWithMiddleware(table, proxy, logger, builder)
+
+	// Create a route with rate limiter and circuit breaker
+	route := &Route{
+		ID:          "cleanup-test-route",
+		Host:        "example.com",
+		PathPrefix:  "/",
+		ContainerID: "container-1",
+		Backend:     NewBackendPool(RoundRobin),
+		MiddlewareConfig: MiddlewareConfig{
+			RateLimit: RateLimitConfig{
+				Enabled: true,
+				Count:   10,
+				Window:  0, // Use default
+			},
+			CircuitBreaker: CircuitBreakerConfig{
+				Enabled:  true,
+				Failures: 0, // Use default
+				Window:   0, // Use default
+			},
+		},
+	}
+	route.Backend.Add(&BackendTarget{Address: "192.168.1.1:8080", Healthy: true})
+	table.Add(route)
+
+	// Build middleware chain to create rate limiter and circuit breaker
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	_ = builder.BuildChain(route, next)
+
+	// Cleanup the route
+	router.CleanupRoute("cleanup-test-route")
+
+	// Should not panic and should clean up middleware state
+	// The cleanup removes rate limiter and circuit breaker from the builder's maps
+}

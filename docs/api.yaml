@@ -1,0 +1,245 @@
+openapi: 3.0.3
+info:
+  title: DockRouter Admin API
+  description: Admin API for DockRouter - Docker-native ingress router
+  version: 1.0.0
+  contact:
+    name: DockRouter
+    url: https://github.com/DockRouter/dockrouter
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:9090
+    description: Local development server
+
+paths:
+  /api/v1/status:
+    get:
+      summary: Get system status
+      description: Returns current system status including uptime, route count, and container count
+      operationId: getStatus
+      tags:
+        - System
+      responses:
+        '200':
+          description: System status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Status'
+              example:
+                status: ok
+                version: 1.0.0
+                routes: 5
+                containers: 3
+                certificates: 2
+                uptime: 1h30m15s
+                http_port: 80
+                https_port: 443
+
+  /api/v1/routes:
+    get:
+      summary: List all routes
+      description: Returns all configured routes with their backends and health status
+      operationId: listRoutes
+      tags:
+        - Routes
+      responses:
+        '200':
+          description: List of routes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Route'
+
+  /api/v1/containers:
+    get:
+      summary: List all containers
+      description: Returns all discovered Docker containers with their labels
+      operationId: listContainers
+      tags:
+        - Containers
+      responses:
+        '200':
+          description: List of containers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Container'
+
+  /api/v1/certificates:
+    get:
+      summary: List all certificates
+      description: Returns all managed TLS certificates
+      operationId: listCertificates
+      tags:
+        - Certificates
+      responses:
+        '200':
+          description: List of certificates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Certificate'
+
+  /api/v1/health:
+    get:
+      summary: Health check
+      description: Simple health check endpoint
+      operationId: healthCheck
+      tags:
+        - System
+      responses:
+        '200':
+          description: System is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+
+  /api/v1/metrics:
+    get:
+      summary: Prometheus metrics
+      description: Returns metrics in Prometheus text format
+      operationId: getMetrics
+      tags:
+        - Observability
+      responses:
+        '200':
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: |
+                  # HELP http_requests_total Total HTTP requests
+                  # TYPE http_requests_total counter
+                  http_requests_total{method="GET",status="200"} 1234
+
+  /api/v1/config:
+    get:
+      summary: Get configuration
+      description: Returns current configuration (sensitive values masked)
+      operationId: getConfig
+      tags:
+        - System
+      responses:
+        '200':
+          description: Current configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Config'
+
+components:
+  schemas:
+    Status:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, error]
+        version:
+          type: string
+        routes:
+          type: integer
+        containers:
+          type: integer
+        certificates:
+          type: integer
+        uptime:
+          type: string
+        http_port:
+          type: integer
+        https_port:
+          type: integer
+
+    Route:
+      type: object
+      properties:
+        id:
+          type: string
+        host:
+          type: string
+        path_prefix:
+          type: string
+        backend:
+          type: string
+        tls:
+          type: boolean
+        healthy:
+          type: boolean
+
+    Container:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        image:
+          type: string
+        host:
+          type: string
+        address:
+          type: string
+        running:
+          type: boolean
+        status:
+          type: string
+        healthy:
+          type: boolean
+        labels:
+          type: integer
+
+    Certificate:
+      type: object
+      properties:
+        domain:
+          type: string
+
+    Config:
+      type: object
+      properties:
+        http_port:
+          type: integer
+        https_port:
+          type: integer
+        admin:
+          type: boolean
+        acme_email:
+          type: string
+        log_level:
+          type: string
+
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+
+security:
+  - basicAuth: []
+
+tags:
+  - name: System
+    description: System status and configuration
+  - name: Routes
+    description: Route management
+  - name: Containers
+    description: Container discovery
+  - name: Certificates
+    description: TLS certificate management
+  - name: Observability
+    description: Metrics and monitoring

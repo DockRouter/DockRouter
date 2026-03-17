@@ -8,9 +8,9 @@ import (
 
 // CORSConfig holds CORS configuration
 type CORSConfig struct {
-	Origins   []string
-	Methods   []string
-	Headers   []string
+	Origins     []string
+	Methods     []string
+	Headers     []string
 	Credentials bool
 }
 

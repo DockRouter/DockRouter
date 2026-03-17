@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -855,5 +856,848 @@ func TestCircuitBreakerMiddlewareWhenOpen(t *testing.T) {
 	// Should return 503 because circuit is open
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("Status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+}
+
+// mockLogger is a mock implementation of Logger interface
+type mockLogger struct {
+	messages []string
+}
+
+func (m *mockLogger) Info(msg string, fields ...interface{}) {
+	m.messages = append(m.messages, msg)
+}
+
+func (m *mockLogger) Debug(msg string, fields ...interface{}) {
+	m.messages = append(m.messages, msg)
+}
+
+func TestAccessLogWithLogger(t *testing.T) {
+	logger := &mockLogger{}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{"status":"ok"}`))
+	})
+
+	accessLogHandler := AccessLogWithLogger(logger)(handler)
+
+	req := httptest.NewRequest("GET", "/test-path", nil)
+	req.RemoteAddr = "192.168.1.1:12345"
+	req.Header.Set("User-Agent", "test-agent")
+	rec := httptest.NewRecorder()
+
+	accessLogHandler.ServeHTTP(rec, req)
+
+	// Check that request was logged
+	if len(logger.messages) != 1 {
+		t.Errorf("Expected 1 log message, got %d", len(logger.messages))
+	}
+	if logger.messages[0] != "request" {
+		t.Errorf("Log message = %s, want 'request'", logger.messages[0])
+	}
+
+	// Check response status
+	if rec.Code != http.StatusCreated {
+		t.Errorf("Status = %d, want %d", rec.Code, http.StatusCreated)
+	}
+}
+
+func TestMetricsMiddleware(t *testing.T) {
+	// mockMetricsCollector implements MetricsCollector interface
+	collector := &mockMetricsCollector{}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("test response"))
+	})
+
+	metricsHandler := Metrics(collector)(handler)
+
+	req := httptest.NewRequest("GET", "/metrics-test", nil)
+	rec := httptest.NewRecorder()
+
+	metricsHandler.ServeHTTP(rec, req)
+
+	// Check that metrics were collected
+	if collector.counterCalls["http_requests_total"] == 0 {
+		t.Error("http_requests_total counter not incremented")
+	}
+	if collector.gaugeCalls["http_requests_active"] == 0 {
+		t.Error("http_requests_active gauge not set")
+	}
+	if collector.histogramCalls["http_request_duration_seconds"] == 0 {
+		t.Error("http_request_duration_seconds histogram not recorded")
+	}
+}
+
+func TestMetricsMiddlewareWithError(t *testing.T) {
+	collector := &mockMetricsCollector{}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+
+	metricsHandler := Metrics(collector)(handler)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+
+	metricsHandler.ServeHTTP(rec, req)
+
+	// Check error counter was incremented for 5xx response
+	if collector.counterCalls["http_errors_total"] == 0 {
+		t.Error("http_errors_total counter not incremented for 5xx response")
+	}
+}
+
+func TestMetricsMiddlewareWithClientError(t *testing.T) {
+	collector := &mockMetricsCollector{}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	})
+
+	metricsHandler := Metrics(collector)(handler)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+
+	metricsHandler.ServeHTTP(rec, req)
+
+	// Check error counter was incremented for 4xx response
+	if collector.counterCalls["http_errors_total"] == 0 {
+		t.Error("http_errors_total counter not incremented for 4xx response")
+	}
+}
+
+// mockMetricsCollector implements MetricsCollector interface
+type mockMetricsCollector struct {
+	counterCalls    map[string]int
+	gaugeCalls      map[string]int
+	histogramCalls  map[string]int
+	gaugeValues     map[string]float64
+	histogramValues map[string][]float64
+}
+
+func (m *mockMetricsCollector) IncCounter(name string) {
+	if m.counterCalls == nil {
+		m.counterCalls = make(map[string]int)
+	}
+	m.counterCalls[name]++
+}
+
+func (m *mockMetricsCollector) ObserveHistogram(name string, value float64) {
+	if m.histogramCalls == nil {
+		m.histogramCalls = make(map[string]int)
+		m.histogramValues = make(map[string][]float64)
+	}
+	m.histogramCalls[name]++
+	m.histogramValues[name] = append(m.histogramValues[name], value)
+}
+
+func (m *mockMetricsCollector) SetGauge(name string, value float64) {
+	if m.gaugeCalls == nil {
+		m.gaugeCalls = make(map[string]int)
+		m.gaugeValues = make(map[string]float64)
+	}
+	m.gaugeCalls[name]++
+	m.gaugeValues[name] = value
+}
+
+func TestCircuitBreakerStateMethod(t *testing.T) {
+	cb := NewCircuitBreaker(5, time.Minute)
+
+	// Initial state should be closed
+	if cb.State() != StateClosed {
+		t.Errorf("Initial state = %v, want StateClosed", cb.State())
+	}
+
+	// Manually set to open
+	cb.mu.Lock()
+	cb.state = StateOpen
+	cb.mu.Unlock()
+
+	if cb.State() != StateOpen {
+		t.Errorf("State = %v, want StateOpen", cb.State())
+	}
+
+	// Manually set to half-open
+	cb.mu.Lock()
+	cb.state = StateHalfOpen
+	cb.mu.Unlock()
+
+	if cb.State() != StateHalfOpen {
+		t.Errorf("State = %v, want StateHalfOpen", cb.State())
+	}
+}
+
+func TestRecoveryWithLogger(t *testing.T) {
+	logger := &mockLogger{}
+
+	panicHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic("test panic with logger")
+	})
+
+	recoveryHandler := RecoveryWithLogger(logger)(panicHandler)
+
+	req := httptest.NewRequest("GET", "/panic-test", nil)
+	rec := httptest.NewRecorder()
+
+	recoveryHandler.ServeHTTP(rec, req)
+
+	// Check that panic was recovered and logged
+	if len(logger.messages) == 0 {
+		t.Error("Expected panic to be logged")
+	}
+	if logger.messages[0] != "recovered from panic" {
+		t.Errorf("Log message = %s, want 'recovered from panic'", logger.messages[0])
+	}
+
+	// Check response
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("Status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestRecoveryWithLoggerNoPanic(t *testing.T) {
+	logger := &mockLogger{}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("success"))
+	})
+
+	recoveryHandler := RecoveryWithLogger(logger)(handler)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+
+	recoveryHandler.ServeHTTP(rec, req)
+
+	// No panic should mean no log
+	if len(logger.messages) != 0 {
+		t.Errorf("Expected no log messages, got %d", len(logger.messages))
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+func TestCircuitBreakerRecordSuccessInClosedState(t *testing.T) {
+	cb := NewCircuitBreaker(3, time.Minute)
+
+	// Add some failures first
+	cb.mu.Lock()
+	cb.failures = 2
+	cb.mu.Unlock()
+
+	// Record success should reset failures in closed state
+	cb.recordSuccess()
+
+	cb.mu.RLock()
+	failures := cb.failures
+	cb.mu.RUnlock()
+
+	if failures != 0 {
+		t.Errorf("failures = %d, want 0 after success in closed state", failures)
+	}
+}
+
+func TestCircuitBreakerRecordSuccessInHalfOpenState(t *testing.T) {
+	cb := NewCircuitBreaker(3, time.Minute)
+
+	// Set to half-open state
+	cb.mu.Lock()
+	cb.state = StateHalfOpen
+	cb.mu.Unlock()
+
+	// Record 3 successes (successMin) to close
+	for i := 0; i < 3; i++ {
+		cb.recordSuccess()
+	}
+
+	cb.mu.RLock()
+	state := cb.state
+	cb.mu.RUnlock()
+
+	if state != StateClosed {
+		t.Errorf("state = %v, want StateClosed after 3 successes in half-open", state)
+	}
+}
+
+func TestCircuitBreakerRecordFailureInHalfOpenState(t *testing.T) {
+	cb := NewCircuitBreaker(3, time.Minute)
+
+	// Set to half-open state
+	cb.mu.Lock()
+	cb.state = StateHalfOpen
+	cb.mu.Unlock()
+
+	// Record failure should transition back to open
+	cb.recordFailure()
+
+	cb.mu.RLock()
+	state := cb.state
+	cb.mu.RUnlock()
+
+	if state != StateOpen {
+		t.Errorf("state = %v, want StateOpen after failure in half-open", state)
+	}
+}
+
+func TestCircuitBreakerRecordFailureReachesThreshold(t *testing.T) {
+	cb := NewCircuitBreaker(3, time.Minute)
+
+	// Record failures until threshold is reached
+	cb.recordFailure()
+	cb.mu.RLock()
+	state := cb.state
+	cb.mu.RUnlock()
+	if state != StateClosed {
+		t.Errorf("state = %v, want StateClosed after 1 failure (threshold 3)", state)
+	}
+
+	cb.recordFailure()
+	cb.mu.RLock()
+	state = cb.state
+	cb.mu.RUnlock()
+	if state != StateClosed {
+		t.Errorf("state = %v, want StateClosed after 2 failures (threshold 3)", state)
+	}
+
+	// Third failure should trigger open state
+	cb.recordFailure()
+	cb.mu.RLock()
+	state = cb.state
+	cb.mu.RUnlock()
+	if state != StateOpen {
+		t.Errorf("state = %v, want StateOpen after 3 failures (threshold 3)", state)
+	}
+}
+
+func TestRedirectHTTPSSkipWithXForwardedProto(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	redirectHandler := RedirectHTTPS(handler)
+
+	// Request with X-Forwarded-Proto: https should not redirect
+	req := httptest.NewRequest("GET", "/path", nil)
+	req.Host = "example.com"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rec := httptest.NewRecorder()
+
+	redirectHandler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Status = %d, want %d (should not redirect)", rec.Code, http.StatusOK)
+	}
+}
+
+func TestRedirectHTTPSSkipWithURLScheme(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	redirectHandler := RedirectHTTPS(handler)
+
+	// Request with r.URL.Scheme = https should not redirect
+	req := httptest.NewRequest("GET", "/path", nil)
+	req.Host = "example.com"
+	req.URL.Scheme = "https"
+	rec := httptest.NewRecorder()
+
+	redirectHandler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Status = %d, want %d (should not redirect)", rec.Code, http.StatusOK)
+	}
+}
+
+func TestRedirectHTTPSWithQuery(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	redirectHandler := RedirectHTTPS(handler)
+
+	req := httptest.NewRequest("GET", "/path?foo=bar&baz=qux", nil)
+	req.Host = "example.com"
+	rec := httptest.NewRecorder()
+
+	redirectHandler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMovedPermanently {
+		t.Errorf("Status = %d, want %d", rec.Code, http.StatusMovedPermanently)
+	}
+
+	location := rec.Header().Get("Location")
+	expected := "https://example.com/path?foo=bar&baz=qux"
+	if location != expected {
+		t.Errorf("Location = %s, want %s", location, expected)
+	}
+}
+
+func TestRateLimiterBlock(t *testing.T) {
+	limiter := NewRateLimiter(1, 60, 1) // Very low limit
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	middleware := limiter.Middleware()
+	rateLimitedHandler := middleware(handler)
+
+	// First request should succeed
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "10.0.0.1:12345"
+	rec := httptest.NewRecorder()
+	rateLimitedHandler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("First request: Status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	// Second request should be rate limited
+	req2 := httptest.NewRequest("GET", "/", nil)
+	req2.RemoteAddr = "10.0.0.1:12345"
+	rec2 := httptest.NewRecorder()
+	rateLimitedHandler.ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusTooManyRequests {
+		t.Errorf("Second request: Status = %d, want %d", rec2.Code, http.StatusTooManyRequests)
+	}
+
+	// Check rate limit headers
+	if rec2.Header().Get("Retry-After") == "" {
+		t.Error("Expected Retry-After header")
+	}
+}
+
+func TestRateLimiterTokenRefill(t *testing.T) {
+	limiter := NewRateLimiter(100, 1, 100) // Very fast refill
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	middleware := limiter.Middleware()
+	rateLimitedHandler := middleware(handler)
+
+	// Use up tokens
+	limiter.mu.Lock()
+	limiter.buckets["10.0.0.1:12345"] = &tokenBucket{
+		tokens:     0,
+		lastRefill: time.Now().Add(-500 * time.Millisecond), // Half window ago
+	}
+	limiter.mu.Unlock()
+
+	// Wait a bit for refill
+	time.Sleep(10 * time.Millisecond)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "10.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	// Should succeed due to refill
+	rateLimitedHandler.ServeHTTP(rec, req)
+
+	// Should have been refilled and allowed
+	if rec.Code != http.StatusOK {
+		t.Errorf("Status = %d, want %d (should have refilled tokens)", rec.Code, http.StatusOK)
+	}
+}
+
+func TestRateLimiterTokenCap(t *testing.T) {
+	limiter := NewRateLimiter(100, 60, 10) // maxSize = 10
+
+	// Create a bucket with tokens already at max
+	limiter.mu.Lock()
+	limiter.buckets["test-key"] = &tokenBucket{
+		tokens:     15,                         // Above maxSize
+		lastRefill: time.Now().Add(-time.Hour), // Long time ago
+	}
+	limiter.mu.Unlock()
+
+	// Allow should cap tokens at maxSize
+	allowed, remaining := limiter.allow("test-key")
+	if !allowed {
+		t.Error("Should be allowed")
+	}
+	// After refill and consumption, tokens should be capped at maxSize-1 (9)
+	if remaining > 10 {
+		t.Errorf("Tokens should be capped, got %f", remaining)
+	}
+}
+
+func TestRateLimiterReturnZeroWhenBlocked(t *testing.T) {
+	limiter := NewRateLimiter(1, 60, 1) // Very low limit
+
+	// First request consumes the only token
+	limiter.allow("test-key")
+
+	// Second request should be blocked and return 0 remaining
+	allowed, remaining := limiter.allow("test-key")
+	if allowed {
+		t.Error("Should be blocked")
+	}
+	if remaining != 0 {
+		t.Errorf("Remaining should be 0 when blocked, got %f", remaining)
+	}
+}
+
+func TestIPFilterAddWhitelistError(t *testing.T) {
+	filter := NewIPFilter()
+
+	err := filter.AddWhitelist("invalid-cidr")
+	if err == nil {
+		t.Error("AddWhitelist should return error for invalid CIDR")
+	}
+}
+
+func TestIPFilterAddBlacklistError(t *testing.T) {
+	filter := NewIPFilter()
+
+	err := filter.AddBlacklist("invalid-cidr")
+	if err == nil {
+		t.Error("AddBlacklist should return error for invalid CIDR")
+	}
+}
+
+func TestIPFilterBlacklistBlocks(t *testing.T) {
+	filter := NewIPFilter()
+	filter.AddBlacklist("10.0.0.1/32")
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	filteredHandler := filter.Middleware()(handler)
+
+	// Blacklisted IP should be blocked
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "10.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	filteredHandler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("Blacklisted IP: Status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+}
+
+func TestIPFilterEmptyAllowsAll(t *testing.T) {
+	filter := NewIPFilter() // No whitelist, no blacklist
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	filteredHandler := filter.Middleware()(handler)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "10.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	filteredHandler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Status = %d, want %d (empty filter should allow all)", rec.Code, http.StatusOK)
+	}
+}
+
+func TestSecurityHeadersWithHTTPS(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	securityHandler := SecurityHeaders(handler)
+
+	// Test with HTTPS request
+	req := httptest.NewRequest("GET", "/", nil)
+	req.URL.Scheme = "https"
+	rec := httptest.NewRecorder()
+
+	securityHandler.ServeHTTP(rec, req)
+
+	// Check HSTS header is set for HTTPS
+	hsts := rec.Header().Get("Strict-Transport-Security")
+	if hsts == "" {
+		t.Error("Strict-Transport-Security header should be set for HTTPS requests")
+	}
+	if !strings.Contains(hsts, "max-age=31536000") {
+		t.Errorf("HSTS max-age incorrect: %s", hsts)
+	}
+}
+
+func TestStripPrefixEmptyPath(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(r.URL.Path))
+	})
+
+	// Test case where path becomes empty after stripping
+	req := httptest.NewRequest("GET", "/api", nil)
+	rec := httptest.NewRecorder()
+
+	stripHandler := StripPrefix("/api")(handler)
+	stripHandler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	// Path should be "/" when empty after stripping
+	if rec.Body.String() != "/" {
+		t.Errorf("Path = %s, want /", rec.Body.String())
+	}
+}
+
+func TestStripPrefixNonEmptyPath(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(r.URL.Path))
+	})
+
+	req := httptest.NewRequest("GET", "/api/users/123", nil)
+	rec := httptest.NewRecorder()
+
+	stripHandler := StripPrefix("/api")(handler)
+	stripHandler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if rec.Body.String() != "/users/123" {
+		t.Errorf("Path = %s, want /users/123", rec.Body.String())
+	}
+}
+
+func TestAddPrefixWithPath(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(r.URL.Path))
+	})
+
+	req := httptest.NewRequest("GET", "/users", nil)
+	rec := httptest.NewRecorder()
+
+	addHandler := AddPrefix("/api/v1")(handler)
+	addHandler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if rec.Body.String() != "/api/v1/users" {
+		t.Errorf("Path = %s, want /api/v1/users", rec.Body.String())
+	}
+}
+
+// Tests for X-Forwarded-For support
+
+func TestExtractClientIP(t *testing.T) {
+	tests := []struct {
+		name           string
+		remoteAddr     string
+		xff            string
+		xRealIP        string
+		cfConnectingIP string
+		expectedIP     string
+	}{
+		{
+			name:       "direct connection no headers",
+			remoteAddr: "192.168.1.1:12345",
+			expectedIP: "192.168.1.1",
+		},
+		{
+			name:       "direct connection with X-Forwarded-For ignored",
+			remoteAddr: "192.168.1.1:12345",
+			xff:        "10.0.0.1",
+			expectedIP: "192.168.1.1",
+		},
+		{
+			name:       "direct connection with X-Real-IP ignored",
+			remoteAddr: "192.168.1.1:12345",
+			xRealIP:    "10.0.0.1",
+			expectedIP: "192.168.1.1",
+		},
+		{
+			name:       "IPv6 address",
+			remoteAddr: "[::1]:12345",
+			expectedIP: "::1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/", nil)
+			req.RemoteAddr = tt.remoteAddr
+			if tt.xff != "" {
+				req.Header.Set("X-Forwarded-For", tt.xff)
+			}
+			if tt.xRealIP != "" {
+				req.Header.Set("X-Real-IP", tt.xRealIP)
+			}
+			if tt.cfConnectingIP != "" {
+				req.Header.Set("CF-Connecting-IP", tt.cfConnectingIP)
+			}
+
+			ip := ExtractClientIP(req)
+			if ip == nil {
+				t.Fatal("ExtractClientIP returned nil")
+			}
+			if ip.String() != tt.expectedIP {
+				t.Errorf("IP = %s, want %s", ip.String(), tt.expectedIP)
+			}
+		})
+	}
+}
+
+func TestExtractClientIPWithTrustedProxies(t *testing.T) {
+	// Define trusted proxies (e.g., 10.0.0.0/8)
+	_, trustedNet, _ := net.ParseCIDR("10.0.0.0/8")
+	trustedProxies := []*net.IPNet{trustedNet}
+
+	tests := []struct {
+		name           string
+		remoteAddr     string
+		xff            string
+		xRealIP        string
+		cfConnectingIP string
+		expectedIP     string
+	}{
+		{
+			name:       "from trusted proxy with X-Forwarded-For",
+			remoteAddr: "10.0.0.1:12345",
+			xff:        "192.168.1.100",
+			expectedIP: "192.168.1.100",
+		},
+		{
+			name:       "from trusted proxy with multiple X-Forwarded-For",
+			remoteAddr: "10.0.0.1:12345",
+			xff:        "192.168.1.100, 10.0.0.2, 10.0.0.3",
+			expectedIP: "192.168.1.100",
+		},
+		{
+			name:       "from trusted proxy with X-Real-IP",
+			remoteAddr: "10.0.0.1:12345",
+			xRealIP:    "192.168.1.200",
+			expectedIP: "192.168.1.200",
+		},
+		{
+			name:           "from trusted proxy with CF-Connecting-IP",
+			remoteAddr:     "10.0.0.1:12345",
+			cfConnectingIP: "192.168.1.50",
+			expectedIP:     "192.168.1.50",
+		},
+		{
+			name:       "from untrusted proxy ignores headers",
+			remoteAddr: "192.168.1.1:12345",
+			xff:        "10.0.0.100",
+			expectedIP: "192.168.1.1",
+		},
+		{
+			name:       "from trusted proxy with invalid X-Forwarded-For",
+			remoteAddr: "10.0.0.1:12345",
+			xff:        "invalid-ip",
+			expectedIP: "10.0.0.1",
+		},
+		{
+			name:       "from trusted proxy X-Forwarded-For takes precedence",
+			remoteAddr: "10.0.0.1:12345",
+			xff:        "192.168.1.100",
+			xRealIP:    "192.168.1.200",
+			expectedIP: "192.168.1.100",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/", nil)
+			req.RemoteAddr = tt.remoteAddr
+			if tt.xff != "" {
+				req.Header.Set("X-Forwarded-For", tt.xff)
+			}
+			if tt.xRealIP != "" {
+				req.Header.Set("X-Real-IP", tt.xRealIP)
+			}
+			if tt.cfConnectingIP != "" {
+				req.Header.Set("CF-Connecting-IP", tt.cfConnectingIP)
+			}
+
+			ip := ExtractClientIPWithTrustedProxies(req, trustedProxies)
+			if ip == nil {
+				t.Fatal("ExtractClientIPWithTrustedProxies returned nil")
+			}
+			if ip.String() != tt.expectedIP {
+				t.Errorf("IP = %s, want %s", ip.String(), tt.expectedIP)
+			}
+		})
+	}
+}
+
+func TestIPFilterWithTrustedProxies(t *testing.T) {
+	filter := NewIPFilter()
+
+	// Add trusted proxy
+	filter.AddTrustedProxy("10.0.0.0/8")
+
+	// Block specific IP
+	filter.AddBlacklist("192.168.1.100/32")
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	filteredHandler := filter.Middleware()(handler)
+
+	tests := []struct {
+		name       string
+		remoteAddr string
+		xff        string
+		wantStatus int
+	}{
+		{
+			name:       "direct blocked IP",
+			remoteAddr: "192.168.1.100:12345",
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "direct allowed IP",
+			remoteAddr: "192.168.1.1:12345",
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "from trusted proxy with blocked client",
+			remoteAddr: "10.0.0.1:12345",
+			xff:        "192.168.1.100",
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "from trusted proxy with allowed client",
+			remoteAddr: "10.0.0.1:12345",
+			xff:        "192.168.1.1",
+			wantStatus: http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/", nil)
+			req.RemoteAddr = tt.remoteAddr
+			if tt.xff != "" {
+				req.Header.Set("X-Forwarded-For", tt.xff)
+			}
+			rec := httptest.NewRecorder()
+
+			filteredHandler.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Errorf("Status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+		})
 	}
 }

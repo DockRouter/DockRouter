@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -199,7 +200,7 @@ func TestCopyData(t *testing.T) {
 	select {
 	case <-done:
 		if !strings.Contains(destBuf.String(), "test data") {
-		t.Errorf("Expected 'test data', got %q", destBuf.String())
+			t.Errorf("Expected 'test data', got %q", destBuf.String())
 		}
 	case <-time.After(time.Second):
 		t.Error("Timeout")
@@ -338,4 +339,125 @@ func (m *mockHijackerResponse) WriteHeader(int) {}
 
 func (m *mockHijackerResponse) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return m.conn, bufio.NewReadWriter(bufio.NewReader(m.conn), bufio.NewWriter(m.conn)), nil
+}
+
+// mockConn implements net.Conn for testing
+type mockConn struct {
+	readData  []byte
+	writeData []byte
+}
+
+func (m *mockConn) Read(b []byte) (n int, err error) {
+	if len(m.readData) == 0 {
+		return 0, io.EOF
+	}
+	n = copy(b, m.readData)
+	m.readData = m.readData[n:]
+	return n, nil
+}
+
+func (m *mockConn) Write(b []byte) (n int, err error) {
+	m.writeData = append(m.writeData, b...)
+	return len(b), nil
+}
+
+func (m *mockConn) Close() error                       { return nil }
+func (m *mockConn) LocalAddr() net.Addr                { return nil }
+func (m *mockConn) RemoteAddr() net.Addr               { return nil }
+func (m *mockConn) SetDeadline(t time.Time) error      { return nil }
+func (m *mockConn) SetReadDeadline(t time.Time) error  { return nil }
+func (m *mockConn) SetWriteDeadline(t time.Time) error { return nil }
+
+// mockHijackerWithError returns error on Hijack
+type mockHijackerWithError struct {
+	header http.Header
+}
+
+func (m *mockHijackerWithError) Header() http.Header {
+	if m.header == nil {
+		m.header = make(http.Header)
+	}
+	return m.header
+}
+
+func (m *mockHijackerWithError) Write([]byte) (int, error) {
+	return 0, nil
+}
+
+func (m *mockHijackerWithError) WriteHeader(int) {}
+
+func (m *mockHijackerWithError) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return nil, nil, fmt.Errorf("hijack failed")
+}
+
+func TestWebSocketServeHTTPHijackError(t *testing.T) {
+	logger := &mockLogger{}
+	wp := NewWebSocketProxy(logger)
+
+	// Create a mock hijacker that returns error on hijack
+	w := &mockHijackerWithError{}
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	r.Header.Set("Upgrade", "websocket")
+
+	// Note: Backend dial happens before hijack, so connection error will occur first
+	// when using a non-existent backend. This tests the error path.
+	err := wp.ServeHTTP(w, r, "localhost:59999")
+	if err == nil {
+		t.Error("ServeHTTP should return error")
+	}
+}
+
+// mockErrorConn fails on Write
+type mockErrorConn struct {
+	writeErr error
+}
+
+func (m *mockErrorConn) Read(b []byte) (n int, err error) {
+	return 0, io.EOF
+}
+
+func (m *mockErrorConn) Write(b []byte) (n int, err error) {
+	return 0, m.writeErr
+}
+
+func (m *mockErrorConn) Close() error                       { return nil }
+func (m *mockErrorConn) LocalAddr() net.Addr                { return nil }
+func (m *mockErrorConn) RemoteAddr() net.Addr               { return nil }
+func (m *mockErrorConn) SetDeadline(t time.Time) error      { return nil }
+func (m *mockErrorConn) SetReadDeadline(t time.Time) error  { return nil }
+func (m *mockErrorConn) SetWriteDeadline(t time.Time) error { return nil }
+
+func TestWebSocketSendUpgradeRequestError(t *testing.T) {
+	logger := &mockLogger{}
+	wp := NewWebSocketProxy(logger)
+
+	// Create connection that fails on write
+	conn := &mockErrorConn{writeErr: io.ErrClosedPipe}
+
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	r.Host = "example.com"
+
+	err := wp.sendUpgradeRequest(conn, r, "example.com:80")
+	if err == nil {
+		t.Error("sendUpgradeRequest should return error when write fails")
+	}
+}
+
+func TestHijackConnectionWithMockHijacker(t *testing.T) {
+	// Create a mock hijacker
+	w := &mockHijackerResponse{
+		conn: &mockConn{},
+	}
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+
+	conn, rw, err := HijackConnection(w, r)
+	if err != nil {
+		t.Errorf("HijackConnection should succeed, got: %v", err)
+	}
+	if conn == nil {
+		t.Error("Connection should not be nil")
+	}
+	if rw == nil {
+		t.Error("ReadWriter should not be nil")
+	}
 }

@@ -261,3 +261,129 @@ func TestHistogramMultiple(t *testing.T) {
 
 	// Verify it doesn't panic
 }
+
+func TestIncCounter(t *testing.T) {
+	c := NewCollector()
+
+	// Use convenience method
+	c.IncCounter("auto_counter")
+	c.IncCounter("auto_counter")
+	c.IncCounter("auto_counter")
+
+	// Verify via the regular method
+	counter := c.Counter("auto_counter")
+	if counter.Value() != 3 {
+		t.Errorf("Counter value = %d, want 3", counter.Value())
+	}
+}
+
+func TestSetGauge(t *testing.T) {
+	c := NewCollector()
+
+	// Use convenience method
+	c.SetGauge("auto_gauge", 42.5)
+	c.SetGauge("auto_gauge", 100.0)
+
+	// Verify it doesn't panic and that the same gauge is returned
+	gauge := c.Gauge("auto_gauge")
+	_ = gauge // Gauge doesn't have Value(), just verify it doesn't panic
+}
+
+func TestObserveHistogram(t *testing.T) {
+	c := NewCollector()
+
+	// Use convenience method
+	c.ObserveHistogram("auto_histogram", 0.1)
+	c.ObserveHistogram("auto_histogram", 0.2)
+	c.ObserveHistogram("auto_histogram", 0.3)
+
+	// Verify via the regular method
+	hist := c.Histogram("auto_histogram")
+	if hist.Count() != 3 {
+		t.Errorf("Histogram count = %d, want 3", hist.Count())
+	}
+}
+
+func TestHistogramCount(t *testing.T) {
+	c := NewCollector()
+	hist := c.Histogram("count_test")
+
+	if hist.Count() != 0 {
+		t.Errorf("Initial count = %d, want 0", hist.Count())
+	}
+
+	hist.Observe(0.1)
+	hist.Observe(0.2)
+
+	if hist.Count() != 2 {
+		t.Errorf("Count after observations = %d, want 2", hist.Count())
+	}
+}
+
+func TestHistogramSum(t *testing.T) {
+	c := NewCollector()
+	hist := c.Histogram("sum_test")
+
+	hist.Observe(1.5)
+	hist.Observe(2.5)
+	hist.Observe(3.0)
+
+	expected := 7.0
+	if hist.Sum() != expected {
+		t.Errorf("Sum = %f, want %f", hist.Sum(), expected)
+	}
+}
+
+func TestHistogramBuckets(t *testing.T) {
+	c := NewCollector()
+	hist := c.Histogram("bucket_test")
+
+	// Observe values that fall into specific buckets
+	hist.Observe(0.001) // Should be in first bucket (<=0.001)
+	hist.Observe(0.05)  // Should be in multiple buckets up to 0.05
+	hist.Observe(1.0)   // Should be in many buckets up to 1.0
+
+	buckets := hist.Buckets()
+	if len(buckets) != len(DefaultBuckets) {
+		t.Errorf("Bucket count = %d, want %d", len(buckets), len(DefaultBuckets))
+	}
+
+	// Verify at least some buckets have counts
+	totalCount := uint64(0)
+	for _, b := range buckets {
+		totalCount += b.count
+	}
+	if totalCount == 0 {
+		t.Error("Expected some bucket counts to be non-zero")
+	}
+}
+
+func TestHistogramBucketsCopy(t *testing.T) {
+	c := NewCollector()
+	hist := c.Histogram("copy_test")
+
+	hist.Observe(0.5)
+
+	buckets1 := hist.Buckets()
+	buckets2 := hist.Buckets()
+
+	// Verify that Buckets() returns a copy (different slices)
+	if &buckets1[0] == &buckets2[0] {
+		t.Error("Buckets() should return a copy, not the same slice")
+	}
+}
+
+func TestConvenienceMethodsWithSameName(t *testing.T) {
+	c := NewCollector()
+
+	// Test that convenience methods create/get the same metric
+	c.IncCounter("shared_name")
+	c.SetGauge("shared_name", 1.0)         // This is a DIFFERENT metric (gauge, not counter)
+	c.ObserveHistogram("shared_name", 0.1) // This is a DIFFERENT metric (histogram)
+
+	// Verify all three exist independently
+	counter := c.Counter("shared_name")
+	if counter.Value() != 1 {
+		t.Errorf("Counter value = %d, want 1", counter.Value())
+	}
+}

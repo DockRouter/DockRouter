@@ -20,6 +20,16 @@ cd multi-app
 docker-compose up -d
 ```
 
+### Load Balancing (`loadbalancing/`)
+Multiple backends with different load balancing strategies.
+
+```bash
+cd loadbalancing
+# Add hosts to /etc/hosts:
+# 127.0.0.1 rr.example.local weighted.example.local sticky.example.local leastconn.example.local
+docker-compose up -d
+```
+
 ### TLS with Auto-Cert (`tls-auto/`)
 Automatic SSL/TLS certificate provisioning with Let's Encrypt.
 
@@ -42,3 +52,6 @@ docker-compose up -d
 | `dr.ratelimit` | Rate limit | `100/m` |
 | `dr.cors.origins` | CORS origins | `*` |
 | `dr.compress` | Enable compression | `true` |
+| `dr.loadbalancer` | LB strategy | `roundrobin`, `weighted`, `iphash`, `leastconn` |
+| `dr.weight` | Backend weight | `5` |
+| `dr.retry` | Retry attempts | `3` |

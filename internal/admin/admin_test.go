@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DockRouter/dockrouter/internal/metrics"
 )
 
 func TestNewAuth(t *testing.T) {
@@ -414,6 +416,30 @@ func TestAPIHandlerMetrics(t *testing.T) {
 	contentType := rec.Header().Get("Content-Type")
 	if contentType != "text/plain; version=0.0.4" {
 		t.Errorf("Content-Type = %s, want text/plain; version=0.0.4", contentType)
+	}
+}
+
+func TestAPIHandlerMetricsWithCollector(t *testing.T) {
+	collector := metrics.NewCollector()
+	collector.Counter("test_counter").Inc()
+	collector.Gauge("test_gauge").Set(42.0)
+
+	handler := NewAPIHandler(collector)
+	routes := handler.Routes()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/metrics", nil)
+	rec := httptest.NewRecorder()
+
+	routes["/api/v1/metrics"](rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Status code = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	// With collector, response should contain metrics
+	body := rec.Body.String()
+	if !strings.Contains(body, "dockrouter_test_counter") {
+		t.Errorf("Response should contain test_counter, got: %s", body)
 	}
 }
 

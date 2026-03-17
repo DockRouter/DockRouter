@@ -174,6 +174,18 @@ func TestHTTPCheckConnectionRefused(t *testing.T) {
 	}
 }
 
+func TestHTTPCheckInvalidURL(t *testing.T) {
+	// Test with control character in URL that causes request creation to fail
+	// \x00 is not valid in URL
+	healthy, err := HTTPCheck("localhost\x00invalid", "/health", 1*time.Second)
+	if err == nil {
+		t.Error("Expected error for invalid URL")
+	}
+	if healthy {
+		t.Error("Expected healthy=false for invalid URL")
+	}
+}
+
 func TestCheckOneStateTransitions(t *testing.T) {
 	checker := NewChecker(10*time.Second, 5*time.Second)
 
@@ -415,4 +427,58 @@ func TestTCPCheckTimeout(t *testing.T) {
 		t.Logf("TCPCheck error (may be expected): %v", err)
 	}
 	_ = healthy // Result depends on whether connection was accepted
+}
+
+func TestCheckerDegradedRecovery(t *testing.T) {
+	// Start test server
+	server := &http.Server{
+		Addr: ":18088",
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+	}
+
+	ln, err := net.Listen("tcp", ":18088")
+	if err != nil {
+		t.Skipf("Cannot start test server: %v", err)
+	}
+
+	go server.Serve(ln)
+	defer server.Shutdown(context.Background())
+	time.Sleep(100 * time.Millisecond)
+
+	checker := NewChecker(time.Minute, time.Minute)
+
+	check := HealthCheck{
+		Target:    "localhost:18088",
+		Path:      "/",
+		Threshold: 4,
+		Recovery:  2,
+	}
+	checker.Register("localhost:18088", check)
+
+	checker.mu.Lock()
+	hc := checker.checks["localhost:18088"]
+	// Set to degraded state with ConsecPass = 0
+	hc.State = StateDegraded
+	hc.ConsecPass = 0
+	checker.mu.Unlock()
+
+	// First success should increment ConsecPass
+	checker.checkOne("localhost:18088", hc)
+	if hc.ConsecPass != 1 {
+		t.Errorf("ConsecPass = %d, want 1", hc.ConsecPass)
+	}
+	if hc.State != StateDegraded {
+		t.Errorf("State = %v, want StateDegraded (not yet 2 passes)", hc.State)
+	}
+
+	// Second success should transition to healthy (ConsecPass >= 2)
+	checker.checkOne("localhost:18088", hc)
+	if hc.ConsecPass != 2 {
+		t.Errorf("ConsecPass = %d, want 2", hc.ConsecPass)
+	}
+	if hc.State != StateHealthy {
+		t.Errorf("State = %v, want StateHealthy after 2 consecutive passes from degraded", hc.State)
+	}
 }

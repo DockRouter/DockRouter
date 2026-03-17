@@ -32,6 +32,7 @@ var (
 )
 
 // Embed dashboard files
+//
 //go:embed dashboard/*
 var dashboardFS embed.FS
 
@@ -47,9 +48,26 @@ type App struct {
 	metrics           *metrics.Collector
 	middlewareBuilder *router.RouteMiddlewareBuilder
 	startTime         time.Time
+
+	// HTTP servers for graceful shutdown
+	httpServer  *http.Server
+	httpsServer *http.Server
+	adminServer *http.Server
 }
 
 func main() {
+	// Handle healthcheck command (for Docker HEALTHCHECK)
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		doHealthCheck()
+		return
+	}
+
+	// Handle version command
+	if len(os.Args) > 1 && (os.Args[1] == "version" || os.Args[1] == "-v" || os.Args[1] == "--version") {
+		printVersion()
+		return
+	}
+
 	// Load configuration
 	cfg, err := config.Load(version, buildTime)
 	if err != nil {
@@ -194,7 +212,7 @@ func (a *App) start(ctx context.Context) {
 	httpHandler := a.buildHTTPHandler(coreHandler)
 
 	// Start HTTP server
-	httpServer := &http.Server{
+	a.httpServer = &http.Server{
 		Addr:         fmt.Sprintf(":%d", a.config.HTTPPort),
 		Handler:      httpHandler,
 		ReadTimeout:  30 * time.Second,
@@ -204,14 +222,14 @@ func (a *App) start(ctx context.Context) {
 
 	go func() {
 		a.logger.Info("HTTP server listening", "port", a.config.HTTPPort)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := a.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			a.logger.Error("HTTP server error", "error", err)
 		}
 	}()
 
 	// Start HTTPS server
 	if a.tlsManager != nil {
-		httpsServer := &http.Server{
+		a.httpsServer = &http.Server{
 			Addr:         fmt.Sprintf(":%d", a.config.HTTPSPort),
 			Handler:      coreHandler,
 			TLSConfig:    a.tlsManager.GetTLSConfig(),
@@ -222,7 +240,7 @@ func (a *App) start(ctx context.Context) {
 
 		go func() {
 			a.logger.Info("HTTPS server listening", "port", a.config.HTTPSPort)
-			if err := httpsServer.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+			if err := a.httpsServer.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
 				a.logger.Error("HTTPS server error", "error", err)
 			}
 		}()
@@ -233,9 +251,16 @@ func (a *App) start(ctx context.Context) {
 		adminHandler := a.buildAdminHandler()
 		adminAddr := fmt.Sprintf("%s:%d", a.config.AdminBind, a.config.AdminPort)
 
+		a.adminServer = &http.Server{
+			Addr:         adminAddr,
+			Handler:      adminHandler,
+			ReadTimeout:  10 * time.Second,
+			WriteTimeout: 10 * time.Second,
+		}
+
 		go func() {
 			a.logger.Info("Admin server listening", "addr", adminAddr)
-			if err := http.ListenAndServe(adminAddr, adminHandler); err != nil {
+			if err := a.adminServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				a.logger.Error("Admin server error", "error", err)
 			}
 		}()
@@ -243,7 +268,36 @@ func (a *App) start(ctx context.Context) {
 }
 
 func (a *App) shutdown(ctx context.Context) {
-	// Components will shut down via context cancellation
+	a.logger.Info("Shutting down servers...")
+
+	// Shutdown HTTP server
+	if a.httpServer != nil {
+		if err := a.httpServer.Shutdown(ctx); err != nil {
+			a.logger.Error("HTTP server shutdown error", "error", err)
+		} else {
+			a.logger.Info("HTTP server stopped")
+		}
+	}
+
+	// Shutdown HTTPS server
+	if a.httpsServer != nil {
+		if err := a.httpsServer.Shutdown(ctx); err != nil {
+			a.logger.Error("HTTPS server shutdown error", "error", err)
+		} else {
+			a.logger.Info("HTTPS server stopped")
+		}
+	}
+
+	// Shutdown admin server
+	if a.adminServer != nil {
+		if err := a.adminServer.Shutdown(ctx); err != nil {
+			a.logger.Error("Admin server shutdown error", "error", err)
+		} else {
+			a.logger.Info("Admin server stopped")
+		}
+	}
+
+	a.logger.Info("All servers stopped")
 }
 
 func (a *App) buildMiddlewareChain(handler http.Handler) http.Handler {
@@ -485,10 +539,11 @@ type appRouteSink struct {
 }
 
 func (s *appRouteSink) AddRoute(info *discovery.ContainerInfo) {
-	pool := router.NewBackendPool(router.RoundRobin)
+	pool := router.NewBackendPool(router.ParseLoadBalanceStrategy(info.Config.LoadBalance))
 	pool.Add(&router.BackendTarget{
 		Address:     info.Address,
 		ContainerID: info.ID,
+		Weight:      info.Config.Weight,
 		Healthy:     info.Healthy,
 	})
 
@@ -525,6 +580,7 @@ func (s *appRouteSink) AddRoute(info *discovery.ContainerInfo) {
 			Failures: info.Config.CircuitBreaker.Failures,
 			Window:   info.Config.CircuitBreaker.Window,
 		},
+		Retry: info.Config.Retry,
 	}
 
 	// Copy basic auth users
@@ -580,4 +636,33 @@ func parseLogLevel(level string) log.Level {
 	default:
 		return log.LevelInfo
 	}
+}
+
+// doHealthCheck performs a health check for Docker HEALTHCHECK
+func doHealthCheck() {
+	// Check admin endpoint health
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get("http://localhost:9090/api/v1/health")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Health check failed: %v\n", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "Health check failed: status %d\n", resp.StatusCode)
+		os.Exit(1)
+	}
+
+	fmt.Println("healthy")
+	os.Exit(0)
+}
+
+// printVersion prints version information
+func printVersion() {
+	fmt.Printf("DockRouter %s\n", version)
+	fmt.Printf("  Built: %s\n", buildTime)
+	fmt.Println()
+	fmt.Println("Zero-dependency Docker-native ingress router")
+	fmt.Println("https://github.com/DockRouter/dockrouter")
 }

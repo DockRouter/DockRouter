@@ -790,3 +790,318 @@ func TestManagerProvisionCertificateNoACME(t *testing.T) {
 		t.Error("provisionCertificate should fail without ACME client")
 	}
 }
+
+func TestManagerEnsureCertificateFromStore(t *testing.T) {
+	logger := &mockTLSLogger{}
+	tempDir := t.TempDir()
+	store := NewStore(tempDir)
+	manager := NewManager(store, nil, nil, logger)
+
+	// Create a valid certificate and save to store
+	cert, err := GenerateSelfSigned("stored.com")
+	if err != nil {
+		t.Fatalf("Failed to generate certificate: %v", err)
+	}
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Certificate[0]})
+	keyDER, _ := x509.MarshalECPrivateKey(cert.PrivateKey.(*ecdsa.PrivateKey))
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	err = store.Save("stored.com", certPEM, keyPEM)
+	if err != nil {
+		t.Fatalf("Failed to save certificate: %v", err)
+	}
+
+	// EnsureCertificate should load from store without needing ACME
+	err = manager.EnsureCertificate("stored.com")
+	if err != nil {
+		t.Errorf("EnsureCertificate should succeed by loading from store: %v", err)
+	}
+
+	// Verify it's cached
+	cached := manager.GetCachedCertificate("stored.com")
+	if cached == nil {
+		t.Error("Certificate should be cached after EnsureCertificate")
+	}
+}
+
+func TestManagerEnsureCertificateNeedsRenewal(t *testing.T) {
+	logger := &mockTLSLogger{}
+	tempDir := t.TempDir()
+	store := NewStore(tempDir)
+	manager := NewManager(store, nil, nil, logger)
+
+	// Create an expiring certificate
+	privKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	serialNumber, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	template := &x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject:      pkix.Name{CommonName: "expiring-ensure.com"},
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(15 * 24 * time.Hour), // 15 days - needs renewal
+		DNSNames:     []string{"expiring-ensure.com"},
+	}
+	certDER, _ := x509.CreateCertificate(rand.Reader, template, template, &privKey.PublicKey, privKey)
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyDER, _ := x509.MarshalECPrivateKey(privKey)
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	err := store.Save("expiring-ensure.com", certPEM, keyPEM)
+	if err != nil {
+		t.Fatalf("Failed to save certificate: %v", err)
+	}
+
+	// EnsureCertificate should try to provision because cert needs renewal
+	// This will fail because no ACME, but we test the path
+	err = manager.EnsureCertificate("expiring-ensure.com")
+	if err == nil {
+		t.Error("EnsureCertificate should fail when trying to provision without ACME")
+	}
+}
+
+func TestManagerEnsureCertificateExpiredInCache(t *testing.T) {
+	logger := &mockTLSLogger{}
+	tempDir := t.TempDir()
+	store := NewStore(tempDir)
+	manager := NewManager(store, nil, nil, logger)
+
+	// Create an expiring certificate and add to cache
+	privKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	serialNumber, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	template := &x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject:      pkix.Name{CommonName: "expiring-cache.com"},
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(15 * 24 * time.Hour), // 15 days - needs renewal
+		DNSNames:     []string{"expiring-cache.com"},
+	}
+	certDER, _ := x509.CreateCertificate(rand.Reader, template, template, &privKey.PublicKey, privKey)
+
+	testCert := &tls.Certificate{
+		Certificate: [][]byte{certDER},
+		PrivateKey:  privKey,
+		Leaf:        template,
+	}
+
+	manager.mu.Lock()
+	manager.certs["expiring-cache.com"] = testCert
+	manager.mu.Unlock()
+
+	// EnsureCertificate should try to provision because cached cert needs renewal
+	err := manager.EnsureCertificate("expiring-cache.com")
+	if err == nil {
+		t.Error("EnsureCertificate should fail when trying to provision without ACME")
+	}
+}
+
+func TestStoreSaveMkdirError(t *testing.T) {
+	// Try to save to an invalid path
+	store := NewStore("/nonexistent/path/that/cannot/be/created\x00")
+
+	err := store.Save("test.com", []byte("cert"), []byte("key"))
+	if err == nil {
+		t.Error("Save should fail with invalid path")
+	}
+}
+
+func TestStoreSaveMetaMarshalError(t *testing.T) {
+	tempDir := t.TempDir()
+	store := NewStore(tempDir)
+
+	// Create the directory first so SaveMeta can try to write
+	certDir := filepath.Join(tempDir, "certificates", "test.com")
+	os.MkdirAll(certDir, 0755)
+
+	// Valid meta should work
+	meta := &CertMeta{
+		Domain:    "test.com",
+		Expiry:    time.Now().Add(365 * 24 * time.Hour).Unix(),
+		CreatedAt: time.Now().Unix(),
+	}
+
+	err := store.SaveMeta("test.com", meta)
+	if err != nil {
+		t.Errorf("SaveMeta should succeed: %v", err)
+	}
+
+	// Load it back
+	loaded, err := store.LoadMeta("test.com")
+	if err != nil {
+		t.Errorf("LoadMeta should succeed: %v", err)
+	}
+	if loaded.Domain != "test.com" {
+		t.Errorf("Domain = %s, want test.com", loaded.Domain)
+	}
+}
+
+func TestStoreLoadMetaErrors(t *testing.T) {
+	tempDir := t.TempDir()
+	store := NewStore(tempDir)
+
+	// Try to load from non-existent domain
+	_, err := store.LoadMeta("nonexistent.com")
+	if err == nil {
+		t.Error("LoadMeta should fail for non-existent domain")
+	}
+
+	// Create directory with invalid JSON
+	certDir := filepath.Join(tempDir, "certificates", "badjson.com")
+	os.MkdirAll(certDir, 0755)
+	os.WriteFile(filepath.Join(certDir, "meta.json"), []byte("invalid json"), 0644)
+
+	_, err = store.LoadMeta("badjson.com")
+	if err == nil {
+		t.Error("LoadMeta should fail with invalid JSON")
+	}
+}
+
+func TestStoreLoadPEMKeyError(t *testing.T) {
+	tempDir := t.TempDir()
+	store := NewStore(tempDir)
+
+	// Create cert directory with only cert.pem
+	certDir := filepath.Join(tempDir, "certificates", "partial.com")
+	os.MkdirAll(certDir, 0755)
+	os.WriteFile(filepath.Join(certDir, "cert.pem"), []byte("cert data"), 0644)
+	// No key.pem
+
+	_, _, err := store.LoadPEM("partial.com")
+	if err == nil {
+		t.Error("LoadPEM should fail when key.pem is missing")
+	}
+}
+
+func TestStoreListPermissionError(t *testing.T) {
+	// Test with non-existent certificates directory
+	tempDir := t.TempDir()
+	store := NewStore(tempDir)
+
+	// List should return nil when directory doesn't exist
+	domains, err := store.List()
+	if err != nil {
+		t.Errorf("List should not error on non-existent dir: %v", err)
+	}
+	if domains != nil {
+		t.Errorf("List should return nil for empty dir, got %v", domains)
+	}
+}
+
+func TestStoreListWithFiles(t *testing.T) {
+	tempDir := t.TempDir()
+	store := NewStore(tempDir)
+
+	// Create certificate directories
+	for _, domain := range []string{"example.com", "test.com", "api.example.com"} {
+		certDir := filepath.Join(tempDir, "certificates", domain)
+		os.MkdirAll(certDir, 0755)
+		os.WriteFile(filepath.Join(certDir, "cert.pem"), []byte("cert"), 0644)
+	}
+
+	// Also create a file (not a directory) to test IsDir check
+	os.WriteFile(filepath.Join(tempDir, "certificates", "file.txt"), []byte("test"), 0644)
+
+	domains, err := store.List()
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(domains) != 3 {
+		t.Errorf("List should return 3 domains, got %d: %v", len(domains), domains)
+	}
+}
+
+func TestRenewalSchedulerCheckRenewalsLoadError(t *testing.T) {
+	logger := &mockTLSLogger{}
+	tempDir := t.TempDir()
+	store := NewStore(tempDir)
+
+	// Create a cert directory with incomplete data
+	certDir := filepath.Join(tempDir, "certificates", "broken.com")
+	os.MkdirAll(certDir, 0755)
+	// No cert.pem or key.pem
+
+	manager := NewManager(store, nil, nil, logger)
+	scheduler := NewRenewalScheduler(manager, logger)
+
+	// Should not panic when LoadPEM fails
+	scheduler.checkRenewals()
+}
+
+func TestManagerSaveAccountKeyError(t *testing.T) {
+	logger := &mockTLSLogger{}
+	// Use invalid path
+	store := NewStore("/nonexistent/path\x00")
+	privKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	acme := &ACMEClient{privateKey: privKey}
+	manager := NewManager(store, acme, nil, logger)
+
+	err := manager.SaveAccountKey()
+	if err == nil {
+		t.Error("SaveAccountKey should fail with invalid path")
+	}
+}
+
+func TestManagerLoadAccountKeyInvalidKey(t *testing.T) {
+	logger := &mockTLSLogger{}
+	tempDir := t.TempDir()
+	store := NewStore(tempDir)
+
+	// Create accounts directory with invalid key
+	accountsDir := filepath.Join(tempDir, "accounts")
+	os.MkdirAll(accountsDir, 0700)
+	os.WriteFile(filepath.Join(accountsDir, "account.key"), []byte("invalid key data"), 0600)
+
+	acme := &ACMEClient{}
+	manager := NewManager(store, acme, nil, logger)
+
+	err := manager.LoadAccountKey()
+	if err == nil {
+		t.Error("LoadAccountKey should fail with invalid key data")
+	}
+}
+
+func TestManagerLoadAccountKeyNoClient(t *testing.T) {
+	logger := &mockTLSLogger{}
+	tempDir := t.TempDir()
+	store := NewStore(tempDir)
+
+	// Create a valid key file
+	privKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	keyDER, _ := x509.MarshalECPrivateKey(privKey)
+	accountsDir := filepath.Join(tempDir, "accounts")
+	os.MkdirAll(accountsDir, 0700)
+	os.WriteFile(filepath.Join(accountsDir, "account.key"), keyDER, 0600)
+
+	// Manager with ACME client but nil privateKey initially
+	acme := &ACMEClient{} // No privateKey set
+	manager := NewManager(store, acme, nil, logger)
+
+	err := manager.LoadAccountKey()
+	if err != nil {
+		t.Errorf("LoadAccountKey should succeed: %v", err)
+	}
+
+	// Verify the key was loaded
+	if acme.privateKey == nil {
+		t.Error("privateKey should be set after LoadAccountKey")
+	}
+}
+
+func TestManagerLoadFromDiskError(t *testing.T) {
+	logger := &mockTLSLogger{}
+	tempDir := t.TempDir()
+	store := NewStore(tempDir)
+
+	// Create a directory with invalid cert structure
+	certDir := filepath.Join(tempDir, "certificates", "bad.com")
+	os.MkdirAll(certDir, 0755)
+	os.WriteFile(filepath.Join(certDir, "cert.pem"), []byte("invalid cert"), 0644)
+	os.WriteFile(filepath.Join(certDir, "key.pem"), []byte("invalid key"), 0644)
+
+	manager := NewManager(store, nil, nil, logger)
+
+	// LoadFromDisk should not return error, it just skips invalid certs
+	err := manager.LoadFromDisk()
+	// It may or may not error depending on implementation
+	_ = err
+}

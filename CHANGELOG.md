@@ -8,7 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Initial release
+- Weighted round-robin load balancing strategy (`dr.loadbalancer=weighted`)
+- `ParseLoadBalanceStrategy()` helper function for strategy parsing
+- `dr.weight` label support for weighted load balancing
+- X-Forwarded-For, X-Real-IP, CF-Connecting-IP header support in IP filtering
+- Trusted proxy configuration for IP filtering (`AddTrustedProxy()`)
+- Docker healthcheck command (`dockrouter healthcheck`)
+- Detailed version command (`dockrouter version`)
+- Performance benchmarks for load balancing and routing
+- Load balancing example in `examples/loadbalancing/`
+- Dependabot configuration for automated dependency updates
+- CI benchmark job for performance tracking
+
+### Fixed
+- ACME thumbprint calculation now follows RFC 7638 (JWK Thumbprint)
+- Graceful shutdown now properly waits for active connections
+- Retry logic verified working in router package
+
+### Changed
+- Refactored duplicate IP network parsing code into `parseIPNetworks()` helper
+- Updated linter configuration (`.golangci.yml`)
+- Improved code formatting across all files
+
+### Security
+- X-Forwarded-For header validation with trusted proxy support
 
 ## [1.0.0] - 2024-03-17
 
@@ -20,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Path-based routing with radix tree for O(k) lookups
 - Automatic TLS certificates via Let's Encrypt (ACME)
 - WebSocket passthrough support
-- Multi-backend load balancing (round-robin, least-connections, ip-hash)
+- Multi-backend load balancing (round-robin, least-connections, ip-hash, weighted)
 
 #### Middleware
 - Rate limiting (token bucket, per-IP/per-route/per-header)

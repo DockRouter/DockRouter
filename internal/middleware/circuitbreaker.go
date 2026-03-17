@@ -13,7 +13,7 @@ type CircuitBreaker struct {
 	failures    int
 	successes   int
 	threshold   int
-	successMin  int           // successes needed to close from half-open
+	successMin  int // successes needed to close from half-open
 	window      time.Duration
 	state       State
 	lastFailure time.Time

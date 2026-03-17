@@ -780,9 +780,9 @@ func TestValidateAdminBindAddress(t *testing.T) {
 
 func TestValidateLogFormat(t *testing.T) {
 	tests := []struct {
-		name       string
-		logFormat  string
-		wantErr    bool
+		name      string
+		logFormat string
+		wantErr   bool
 	}{
 		{"json format", "json", false},
 		{"text format", "text", false},
@@ -1090,25 +1090,25 @@ func TestApplyDefaultsFullConfig(t *testing.T) {
 func TestLoadFromEnvFull(t *testing.T) {
 	// Set all env vars
 	envVars := map[string]string{
-		"DR_HTTP_PORT":      "8880",
-		"DR_HTTPS_PORT":     "8443",
-		"DR_ADMIN":          "false",
-		"DR_ADMIN_PORT":     "9990",
-		"DR_ADMIN_BIND":     "127.0.0.1",
-		"DR_ADMIN_USER":     "testuser",
-		"DR_ADMIN_PASS":     "testpass",
-		"DR_DOCKER_SOCKET":  "/custom/docker.sock",
-		"DR_DATA_DIR":       "/custom/data",
-		"DR_ACME_EMAIL":     "test@example.com",
-		"DR_ACME_PROVIDER":  "zerossl",
-		"DR_ACME_STAGING":   "true",
-		"DR_LOG_LEVEL":      "debug",
-		"DR_LOG_FORMAT":     "text",
-		"DR_ACCESS_LOG":     "false",
-		"DR_DEFAULT_TLS":    "manual",
-		"DR_MAX_BODY_SIZE":  "50mb",
-		"DR_POLL_INTERVAL":  "30s",
-		"DR_TRUSTED_IPS":    "10.0.0.0/8,192.168.0.0/16",
+		"DR_HTTP_PORT":     "8880",
+		"DR_HTTPS_PORT":    "8443",
+		"DR_ADMIN":         "false",
+		"DR_ADMIN_PORT":    "9990",
+		"DR_ADMIN_BIND":    "127.0.0.1",
+		"DR_ADMIN_USER":    "testuser",
+		"DR_ADMIN_PASS":    "testpass",
+		"DR_DOCKER_SOCKET": "/custom/docker.sock",
+		"DR_DATA_DIR":      "/custom/data",
+		"DR_ACME_EMAIL":    "test@example.com",
+		"DR_ACME_PROVIDER": "zerossl",
+		"DR_ACME_STAGING":  "true",
+		"DR_LOG_LEVEL":     "debug",
+		"DR_LOG_FORMAT":    "text",
+		"DR_ACCESS_LOG":    "false",
+		"DR_DEFAULT_TLS":   "manual",
+		"DR_MAX_BODY_SIZE": "50mb",
+		"DR_POLL_INTERVAL": "30s",
+		"DR_TRUSTED_IPS":   "10.0.0.0/8,192.168.0.0/16",
 	}
 
 	for k, v := range envVars {
@@ -1215,10 +1215,10 @@ func TestParseFlagsWithMock(t *testing.T) {
 
 func TestValidateMultipleErrors(t *testing.T) {
 	cfg := &Config{
-		HTTPPort:     0,      // invalid
-		HTTPSPort:    0,      // invalid
+		HTTPPort:     0, // invalid
+		HTTPSPort:    0, // invalid
 		Admin:        true,
-		AdminPort:    80,     // conflicts with HTTP
+		AdminPort:    80, // conflicts with HTTP
 		LogLevel:     "invalid",
 		LogFormat:    "yaml", // invalid
 		DefaultTLS:   "bad",  // invalid

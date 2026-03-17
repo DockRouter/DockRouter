@@ -1,0 +1,89 @@
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - gofmt
+    - goimports
+    - govet
+    - errcheck
+    - staticcheck
+    - ineffassign
+    - typecheck
+    - gosimple
+    - goconst
+    - gocyclo
+    - dupl
+    - misspell
+
+linters-settings:
+  gocyclo:
+    min-complexity: 20
+  goconst:
+    min-len: 4
+    min-occurrences: 6
+  dupl:
+    threshold: 100
+  errcheck:
+    check-type-assertions: false
+    check-blank: false
+    exclude-functions:
+      - fmt.Fprintf
+      - fmt.Fprintf
+      - fmt.Fprintln
+      - fmt.Fprint
+      - fmt.Printf
+      - fmt.Println
+      - fmt.Print
+      - fmt.Sprint
+      - (*net/http.ResponseWriter).Write
+      - (*encoding/json.Encoder).Encode
+      - (*encoding/gob.Encoder).Encode
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - dupl
+        - goconst
+        - errcheck
+        - unused
+        - staticcheck
+        - gocyclo
+        - gofmt
+    # Docker API constants
+    - source: "\"container\""
+      linters:
+        - goconst
+    # Allow unchecked writes in HTTP handlers
+    - source: "w\\.Write\\("
+      linters:
+        - errcheck
+    - source: "\\.Encode\\("
+      linters:
+        - errcheck
+    - source: "Shutdown\\("
+      linters:
+        - errcheck
+    - source: "SetDeadline\\("
+      linters:
+        - errcheck
+    - source: "rand\\.Read\\("
+      linters:
+        - errcheck
+    - source: "SaveMeta\\("
+      linters:
+        - errcheck
+    - source: "MkdirAll\\("
+      linters:
+        - errcheck
+    - source: "Execute\\("
+      linters:
+        - errcheck
+    - source: "AddWhitelist\\(|AddBlacklist\\("
+      linters:
+        - errcheck
+    # Config validation is complex by nature
+    - path: internal/config/
+      linters:
+        - gocyclo

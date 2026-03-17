@@ -16,11 +16,11 @@ type Config struct {
 	HTTPSPort int
 
 	// Admin dashboard
-	Admin      bool
-	AdminPort  int
-	AdminBind  string
-	AdminUser  string
-	AdminPass  string
+	Admin     bool
+	AdminPort int
+	AdminBind string
+	AdminUser string
+	AdminPass string
 
 	// Docker
 	DockerSocket string
@@ -43,6 +43,12 @@ type Config struct {
 	DefaultTLS  string
 	MaxBodySize string
 	TrustedIPs  []string
+
+	// Webhook notifications
+	WebhookURLs       []string
+	WebhookSecretKey  string
+	WebhookEvents     []string
+	WebhookRetryCount int
 
 	// Runtime info
 	Version   string
@@ -145,6 +151,12 @@ func (c *Config) loadFromEnv() {
 	loadString(&c.MaxBodySize, "DR_MAX_BODY_SIZE")
 	loadDuration(&c.PollInterval, "DR_POLL_INTERVAL")
 	loadSlice(&c.TrustedIPs, "DR_TRUSTED_IPS")
+
+	// Webhook
+	loadSlice(&c.WebhookURLs, "DR_WEBHOOK_URLS")
+	loadString(&c.WebhookSecretKey, "DR_WEBHOOK_SECRET_KEY")
+	loadSlice(&c.WebhookEvents, "DR_WEBHOOK_EVENTS")
+	loadInt(&c.WebhookRetryCount, "DR_WEBHOOK_RETRY_COUNT")
 }
 
 // Helper functions for env loading

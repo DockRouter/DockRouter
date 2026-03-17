@@ -23,12 +23,12 @@ func NewAPIHandler(metricsCollector *metrics.Collector) *APIHandler {
 // Routes returns the API routes
 func (h *APIHandler) Routes() map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
-		"/api/v1/status":      h.status,
-		"/api/v1/routes":      h.routes,
-		"/api/v1/containers":  h.containers,
+		"/api/v1/status":       h.status,
+		"/api/v1/routes":       h.routes,
+		"/api/v1/containers":   h.containers,
 		"/api/v1/certificates": h.certificates,
-		"/api/v1/metrics":     h.metrics,
-		"/api/v1/health":      h.health,
+		"/api/v1/metrics":      h.metrics,
+		"/api/v1/health":       h.health,
 	}
 }
 

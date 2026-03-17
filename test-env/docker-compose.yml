@@ -2,11 +2,12 @@
 #
 # Usage:
 #   1. Add to C:\Windows\System32\drivers\etc\hosts:
-#      127.0.0.1 api.test.local web.test.local admin.test.local test.local
+#      127.0.0.1 api.test.local web.test.local admin.test.local test.local lb.test.local
 #   2. docker-compose up -d
 #   3. Test endpoints:
 #      curl http://api.test.local
 #      curl http://web.test.local
+#      curl http://lb.test.local (multiple requests show load balancing)
 #      Open http://localhost:9090 (admin dashboard)
 
 services:
@@ -100,6 +101,49 @@ services:
       dr.port: "5678"
       dr.stripprefix: "/api/v2"
     command: ["-text={\"version\":\"v2\",\"message\":\"API v2 endpoint\"}"]
+    networks:
+      - test-net
+    restart: unless-stopped
+
+  # Load balancing test (weighted)
+  lb-backend-1:
+    image: hashicorp/http-echo:latest
+    container_name: lb-backend-1
+    labels:
+      dr.enable: "true"
+      dr.host: "lb.test.local"
+      dr.port: "5678"
+      dr.loadbalancer: "weighted"
+      dr.weight: "5"
+    command: ["-text={\"backend\":\"1\",\"weight\":5}"]
+    networks:
+      - test-net
+    restart: unless-stopped
+
+  lb-backend-2:
+    image: hashicorp/http-echo:latest
+    container_name: lb-backend-2
+    labels:
+      dr.enable: "true"
+      dr.host: "lb.test.local"
+      dr.port: "5678"
+      dr.loadbalancer: "weighted"
+      dr.weight: "3"
+    command: ["-text={\"backend\":\"2\",\"weight\":3}"]
+    networks:
+      - test-net
+    restart: unless-stopped
+
+  lb-backend-3:
+    image: hashicorp/http-echo:latest
+    container_name: lb-backend-3
+    labels:
+      dr.enable: "true"
+      dr.host: "lb.test.local"
+      dr.port: "5678"
+      dr.loadbalancer: "weighted"
+      dr.weight: "2"
+    command: ["-text={\"backend\":\"3\",\"weight\":2}"]
     networks:
       - test-net
     restart: unless-stopped

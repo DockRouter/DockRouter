@@ -4,8 +4,11 @@ package log
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -108,6 +111,7 @@ func TestLevelString(t *testing.T) {
 		{LevelWarn, "warn"},
 		{LevelError, "error"},
 		{LevelFatal, "fatal"},
+		{Level(999), "unknown"}, // Invalid level
 	}
 
 	for _, tt := range tests {
@@ -221,5 +225,105 @@ func TestLoggerFieldsOddArgs(t *testing.T) {
 	var entry map[string]interface{}
 	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
 		t.Errorf("Output should be valid JSON even with odd args: %v", err)
+	}
+}
+
+func TestLoggerWithNonStringKey(t *testing.T) {
+	var buf bytes.Buffer
+	logger := NewLogger(&buf, LevelInfo)
+
+	// Test with non-string key (should be skipped)
+	logger.Info("message", 123, "value", "valid_key", "valid_value")
+
+	// Should still produce valid JSON
+	var entry map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Errorf("Output should be valid JSON: %v", err)
+	}
+
+	fields := entry["Fields"].(map[string]interface{})
+	// Non-string key should be skipped, but valid key should be present
+	if fields["valid_key"] != "valid_value" {
+		t.Error("Should contain valid_key")
+	}
+}
+
+func TestLoggerWithErrorValue(t *testing.T) {
+	var buf bytes.Buffer
+	logger := NewLogger(&buf, LevelInfo)
+
+	// Test with error value (should be converted to string)
+	testErr := fmt.Errorf("test error message")
+	logger.Info("message", "error_field", testErr)
+
+	// Should produce valid JSON with error as string
+	var entry map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Errorf("Output should be valid JSON: %v", err)
+	}
+
+	fields := entry["Fields"].(map[string]interface{})
+	// Error should be stored as its string representation
+	if fields["error_field"] != "test error message" {
+		t.Errorf("error_field = %v, want 'test error message'", fields["error_field"])
+	}
+}
+
+func TestLoggerFatalSubprocess(t *testing.T) {
+	// This test runs in a subprocess to test Fatal which calls os.Exit
+	if os.Getenv("TEST_FATAL") == "1" {
+		// nil writer defaults to stdout, which we capture
+		logger := NewLogger(nil, LevelFatal)
+		logger.Fatal("fatal message", "key", "value")
+		return
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestLoggerFatalSubprocess")
+	cmd.Env = append(os.Environ(), "TEST_FATAL=1")
+	output, err := cmd.CombinedOutput()
+
+	// Fatal should cause the process to exit with code 1
+	if err == nil {
+		t.Error("Fatal should cause process to exit with non-zero status")
+	}
+
+	// Check that the fatal message was logged
+	if !strings.Contains(string(output), "fatal message") {
+		t.Errorf("Output should contain 'fatal message', got: %s", output)
+	}
+
+	// Check exit code
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		if exitErr.ExitCode() != 1 {
+			t.Errorf("Exit code = %d, want 1", exitErr.ExitCode())
+		}
+	}
+}
+
+func TestLoggerFatalJSONFormat(t *testing.T) {
+	// Test that fatal logs in correct JSON format (subprocess)
+	if os.Getenv("TEST_FATAL_JSON") == "1" {
+		// nil writer defaults to stdout
+		logger := NewLogger(nil, LevelFatal)
+		logger.Fatal("fatal json test")
+		return
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestLoggerFatalJSONFormat")
+	cmd.Env = append(os.Environ(), "TEST_FATAL_JSON=1")
+	output, _ := cmd.CombinedOutput()
+
+	// Should contain valid JSON with level "fatal"
+	var entry map[string]interface{}
+	if err := json.Unmarshal(output, &entry); err != nil {
+		t.Errorf("Output should be valid JSON: %v, got: %s", err, output)
+	}
+
+	if entry["level"] != "fatal" {
+		t.Errorf("level = %v, want 'fatal'", entry["level"])
+	}
+
+	if entry["msg"] != "fatal json test" {
+		t.Errorf("msg = %v, want 'fatal json test'", entry["msg"])
 	}
 }

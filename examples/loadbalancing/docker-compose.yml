@@ -1,0 +1,137 @@
+# Load Balancing Example - Multiple strategies
+#
+# This example demonstrates DockRouter's load balancing capabilities
+# with multiple backends and different strategies.
+#
+# Usage:
+#   Add to /etc/hosts:
+#     127.0.0.1 lb.example.local
+#   docker-compose up -d
+#   curl http://lb.example.local (multiple requests show different backends)
+
+version: "3.8"
+
+services:
+  dockrouter:
+    image: dockrouter/dockrouter:latest
+    container_name: dockrouter
+    ports:
+      - "80:80"
+      - "9090:9090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - DR_LOG_LEVEL=debug
+      - DR_ACCESS_LOG=true
+    restart: unless-stopped
+
+  # Round-robin backend pool (default strategy)
+  # Requests distributed evenly across all backends
+  rr-backend-1:
+    image: hashicorp/http-echo:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "rr.example.local"
+      dr.port: "5678"
+      dr.loadbalancer: "roundrobin"
+    command: ["-text=Backend 1 (Round-Robin)"]
+    restart: unless-stopped
+
+  rr-backend-2:
+    image: hashicorp/http-echo:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "rr.example.local"
+      dr.port: "5678"
+      dr.loadbalancer: "roundrobin"
+    command: ["-text=Backend 2 (Round-Robin)"]
+    restart: unless-stopped
+
+  rr-backend-3:
+    image: hashicorp/http-echo:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "rr.example.local"
+      dr.port: "5678"
+      dr.loadbalancer: "roundrobin"
+    command: ["-text=Backend 3 (Round-Robin)"]
+    restart: unless-stopped
+
+  # Weighted round-robin backend pool
+  # Backend 1 gets 50%, Backend 2 gets 30%, Backend 3 gets 20%
+  weighted-backend-1:
+    image: hashicorp/http-echo:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "weighted.example.local"
+      dr.port: "5678"
+      dr.loadbalancer: "weighted"
+      dr.weight: "5"
+    command: ["-text=Backend 1 (Weight: 5 - 50%)"]
+    restart: unless-stopped
+
+  weighted-backend-2:
+    image: hashicorp/http-echo:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "weighted.example.local"
+      dr.port: "5678"
+      dr.loadbalancer: "weighted"
+      dr.weight: "3"
+    command: ["-text=Backend 2 (Weight: 3 - 30%)"]
+    restart: unless-stopped
+
+  weighted-backend-3:
+    image: hashicorp/http-echo:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "weighted.example.local"
+      dr.port: "5678"
+      dr.loadbalancer: "weighted"
+      dr.weight: "2"
+    command: ["-text=Backend 3 (Weight: 2 - 20%)"]
+    restart: unless-stopped
+
+  # IP Hash backend pool (sticky sessions)
+  # Same client IP always goes to same backend
+  iphash-backend-1:
+    image: hashicorp/http-echo:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "sticky.example.local"
+      dr.port: "5678"
+      dr.loadbalancer: "iphash"
+    command: ["-text=Backend 1 (IP Hash)"]
+    restart: unless-stopped
+
+  iphash-backend-2:
+    image: hashicorp/http-echo:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "sticky.example.local"
+      dr.port: "5678"
+      dr.loadbalancer: "iphash"
+    command: ["-text=Backend 2 (IP Hash)"]
+    restart: unless-stopped
+
+  # Least connections backend pool
+  # Requests go to backend with fewest active connections
+  leastconn-backend-1:
+    image: hashicorp/http-echo:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "leastconn.example.local"
+      dr.port: "5678"
+      dr.loadbalancer: "leastconn"
+    command: ["-text=Backend 1 (Least Connections)"]
+    restart: unless-stopped
+
+  leastconn-backend-2:
+    image: hashicorp/http-echo:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "leastconn.example.local"
+      dr.port: "5678"
+      dr.loadbalancer: "leastconn"
+    command: ["-text=Backend 2 (Least Connections)"]
+    restart: unless-stopped

@@ -10,9 +10,9 @@ import (
 // It supports exact host matching and wildcard matching
 type Table struct {
 	mu       sync.RWMutex
-	exact    map[string]*RadixTree      // exact host -> path tree
-	wildcard map[string]*RadixTree      // *.domain.com -> path tree
-	routes   map[string]*Route          // route ID -> route
+	exact    map[string]*RadixTree // exact host -> path tree
+	wildcard map[string]*RadixTree // *.domain.com -> path tree
+	routes   map[string]*Route     // route ID -> route
 }
 
 // NewTable creates a new route table

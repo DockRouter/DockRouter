@@ -16,9 +16,9 @@ func (m *mockLogger) Warn(msg string, fields ...interface{})  {}
 func (m *mockLogger) Error(msg string, fields ...interface{}) {}
 
 type mockRouteSink struct {
-	mu       sync.RWMutex
-	routes   map[string]*ContainerInfo
-	removed  []string
+	mu      sync.RWMutex
+	routes  map[string]*ContainerInfo
+	removed []string
 }
 
 func newMockRouteSink() *mockRouteSink {

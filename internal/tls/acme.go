@@ -58,12 +58,12 @@ type ACMEAccount struct {
 
 // ACMEOrder represents a certificate order
 type ACMEOrder struct {
-	Status      string       `json:"status"`
-	Expires     string       `json:"expires"`
-	Identifiers []Identifier `json:"identifiers"`
-	Authorizations []string  `json:"authorizations"`
-	FinalizeURL string       `json:"finalize"`
-	CertificateURL string    `json:"certificate,omitempty"`
+	Status         string       `json:"status"`
+	Expires        string       `json:"expires"`
+	Identifiers    []Identifier `json:"identifiers"`
+	Authorizations []string     `json:"authorizations"`
+	FinalizeURL    string       `json:"finalize"`
+	CertificateURL string       `json:"certificate,omitempty"`
 }
 
 // Identifier represents a domain identifier
@@ -74,20 +74,20 @@ type Identifier struct {
 
 // ACMEAuthorization represents an authorization
 type ACMEAuthorization struct {
-	Status     string       `json:"status"`
-	Identifier Identifier   `json:"identifier"`
-	Challenges []Challenge  `json:"challenges"`
-	Expires    string       `json:"expires"`
+	Status     string      `json:"status"`
+	Identifier Identifier  `json:"identifier"`
+	Challenges []Challenge `json:"challenges"`
+	Expires    string      `json:"expires"`
 }
 
 // Challenge represents an ACME challenge
 type Challenge struct {
-	Type      string            `json:"type"`
-	URL       string            `json:"url"`
-	Token     string            `json:"token"`
-	Status    string            `json:"status"`
-	Validated string            `json:"validated,omitempty"`
-	Error     *ACMEError        `json:"error,omitempty"`
+	Type      string     `json:"type"`
+	URL       string     `json:"url"`
+	Token     string     `json:"token"`
+	Status    string     `json:"status"`
+	Validated string     `json:"validated,omitempty"`
+	Error     *ACMEError `json:"error,omitempty"`
 }
 
 // ACMEError represents an ACME error
@@ -395,8 +395,8 @@ func (c *ACMEClient) signPayload(payload interface{}, url string) (map[string]in
 
 	// Create protected header
 	protected := map[string]interface{}{
-		"alg": "ES256",
-		"url": url,
+		"alg":   "ES256",
+		"url":   url,
 		"nonce": c.nonce,
 	}
 
