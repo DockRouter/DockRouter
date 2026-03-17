@@ -78,7 +78,7 @@ func (c *DockerClient) doRequest(ctx context.Context, method, path string) ([]by
 	// Check status
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("Docker API error: %s - %s", resp.Status, string(body))
+		return nil, fmt.Errorf("docker API error: %s - %s", resp.Status, string(body))
 	}
 
 	// Read body
@@ -124,7 +124,7 @@ func (c *DockerClient) doStreamRequest(ctx context.Context, method, path string)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		conn.Close()
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("Docker API error: %s - %s", resp.Status, string(body))
+		return nil, fmt.Errorf("docker API error: %s - %s", resp.Status, string(body))
 	}
 
 	return &unixReadCloser{conn: conn, body: resp.Body}, nil

@@ -377,21 +377,13 @@ func (e *Engine) GetContainer(id string) *ContainerInfo {
 
 func extractName(names []string) string {
 	for _, name := range names {
-		// Remove leading /
-		if strings.HasPrefix(name, "/") {
-			name = name[1:]
-		}
-		return name
+		return strings.TrimPrefix(name, "/")
 	}
 	return ""
 }
 
 func extractNameFromDetail(detail *ContainerDetail) string {
-	name := detail.Name
-	if strings.HasPrefix(name, "/") {
-		name = name[1:]
-	}
-	return name
+	return strings.TrimPrefix(detail.Name, "/")
 }
 
 func detectPort(ports []PortBinding, detail *ContainerDetail) int {

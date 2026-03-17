@@ -11,17 +11,18 @@ type bufferPool struct {
 func newBufferPool() *bufferPool {
 	return &bufferPool{
 		pool: sync.Pool{
-			New: func() interface{} {
-				return make([]byte, 32*1024)
+			New: func() any {
+				buf := make([]byte, 32*1024)
+				return &buf
 			},
 		},
 	}
 }
 
 func (b *bufferPool) Get() []byte {
-	return b.pool.Get().([]byte)
+	return *b.pool.Get().(*[]byte)
 }
 
 func (b *bufferPool) Put(buf []byte) {
-	b.pool.Put(buf)
+	b.pool.Put(&buf)
 }
