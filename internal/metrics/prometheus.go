@@ -27,8 +27,17 @@ func (c *Collector) PrometheusFormat(w io.Writer) {
 	// Write histograms
 	for name, hist := range c.histograms {
 		fmt.Fprintf(w, "# TYPE %s histogram\n", sanitizeName(name))
-		fmt.Fprintf(w, "%s_count %d\n", sanitizeName(name), hist.count)
-		fmt.Fprintf(w, "%s_sum %g\n\n", sanitizeName(name), hist.sum)
+
+		// Write bucket counts
+		for _, bucket := range hist.Buckets() {
+			fmt.Fprintf(w, "%s_bucket{le=\"%g\"} %d\n",
+				sanitizeName(name), bucket.upperBound, bucket.count)
+		}
+		// +Inf bucket (total count)
+		fmt.Fprintf(w, "%s_bucket{le=\"+Inf\"} %d\n", sanitizeName(name), hist.Count())
+
+		fmt.Fprintf(w, "%s_sum %g\n", sanitizeName(name), hist.Sum())
+		fmt.Fprintf(w, "%s_count %d\n\n", sanitizeName(name), hist.Count())
 	}
 }
 

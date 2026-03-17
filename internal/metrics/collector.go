@@ -27,10 +27,20 @@ type Gauge struct {
 
 // Histogram tracks distribution of values
 type Histogram struct {
-	count uint64
-	sum   float64
-	// TODO: Add bucket tracking
+	mu      sync.RWMutex
+	count   uint64
+	sum     float64
+	buckets []HistogramBucket
 }
+
+// HistogramBucket holds a single bucket
+type HistogramBucket struct {
+	upperBound float64
+	count      uint64
+}
+
+// DefaultBuckets are default histogram buckets (in seconds for latency)
+var DefaultBuckets = []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
 
 // NewCollector creates a new metrics collector
 func NewCollector() *Collector {
@@ -87,14 +97,51 @@ func (c *Collector) Histogram(name string) *Histogram {
 	if hist, ok := c.histograms[name]; ok {
 		return hist
 	}
-	hist := &Histogram{}
+	hist := &Histogram{
+		buckets: make([]HistogramBucket, len(DefaultBuckets)),
+	}
+	for i, bound := range DefaultBuckets {
+		hist.buckets[i].upperBound = bound
+	}
 	c.histograms[name] = hist
 	return hist
 }
 
 // Observe records an observation
 func (h *Histogram) Observe(v float64) {
-	atomic.AddUint64(&h.count, 1)
-	// Note: not thread-safe for sum, would need mutex
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.count++
 	h.sum += v
+
+	// Increment matching buckets
+	for i := range h.buckets {
+		if v <= h.buckets[i].upperBound {
+			h.buckets[i].count++
+		}
+	}
+}
+
+// Count returns the number of observations
+func (h *Histogram) Count() uint64 {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.count
+}
+
+// Sum returns the sum of all observations
+func (h *Histogram) Sum() float64 {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.sum
+}
+
+// Buckets returns bucket boundaries and counts
+func (h *Histogram) Buckets() []HistogramBucket {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	result := make([]HistogramBucket, len(h.buckets))
+	copy(result, h.buckets)
+	return result
 }
