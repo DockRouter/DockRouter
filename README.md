@@ -483,10 +483,11 @@ See [examples/](./examples/) directory:
 |---------|-------------|
 | [basic](./examples/basic/) | Simple HTTP routing |
 | [tls-auto](./examples/tls-auto/) | Auto TLS with Let's Encrypt |
-| [multi-app](./examples/multi-app/) | Multiple applications |
-| [microservices](./examples/microservices/) | Microservices architecture |
-| [websocket](./examples/websocket/) | WebSocket proxying |
-| [rate-limiting](./examples/rate-limiting/) | Rate limiting examples |
+| [multi-app](./examples/multi-app/) | Multiple applications with path-based routing |
+| [microservices](./examples/microservices/) | Full microservices architecture with middleware |
+| [websocket](./examples/websocket/) | WebSocket proxying with sticky sessions |
+| [rate-limiting](./examples/rate-limiting/) | Rate limiting and circuit breaker examples |
+| [loadbalancing](./examples/loadbalancing/) | Round-robin, weighted, IP hash, least connections |
 
 ---
 

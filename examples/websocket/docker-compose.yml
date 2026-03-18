@@ -1,0 +1,58 @@
+# WebSocket Example - Transparent WebSocket proxying
+#
+# This example demonstrates DockRouter's WebSocket support.
+# DockRouter automatically detects WebSocket upgrade requests
+# and proxies them transparently to the backend.
+#
+# Usage:
+#   Add to /etc/hosts: 127.0.0.1 ws.example.local
+#   docker-compose up -d
+#
+# Test with wscat or browser:
+#   wscat -c ws://ws.example.local/ws
+#   Or open http://ws.example.local in a browser for the demo page
+
+version: "3.8"
+
+services:
+  dockrouter:
+    image: dockrouter/dockrouter:latest
+    container_name: dockrouter
+    ports:
+      - "80:80"
+      - "9090:9090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - DR_LOG_LEVEL=debug
+    restart: unless-stopped
+
+  # WebSocket echo server
+  # Echoes back any message sent via WebSocket
+  ws-echo:
+    image: jmalloc/echo-server:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "ws.example.local"
+      dr.port: "8080"
+      dr.healthcheck.path: "/"
+    restart: unless-stopped
+
+  # Chat-style WebSocket app with multiple backends
+  ws-chat-1:
+    image: jmalloc/echo-server:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "chat.example.local"
+      dr.port: "8080"
+      dr.loadbalancer: "iphash"
+    restart: unless-stopped
+
+  ws-chat-2:
+    image: jmalloc/echo-server:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "chat.example.local"
+      dr.port: "8080"
+      dr.loadbalancer: "iphash"
+    restart: unless-stopped

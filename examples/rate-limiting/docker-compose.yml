@@ -1,0 +1,64 @@
+# Rate Limiting Example - Token bucket rate limiter
+#
+# This example demonstrates DockRouter's rate limiting capabilities
+# with different rate limit configurations per route.
+#
+# Usage:
+#   Add to /etc/hosts:
+#     127.0.0.1 api.example.local public.example.local admin.example.local
+#   docker-compose up -d
+#
+# Test rate limiting:
+#   for i in $(seq 1 20); do curl -s -o /dev/null -w "%{http_code}\n" http://api.example.local; done
+#   # After 10 requests you should see 429 responses
+
+version: "3.8"
+
+services:
+  dockrouter:
+    image: dockrouter/dockrouter:latest
+    container_name: dockrouter
+    ports:
+      - "80:80"
+      - "9090:9090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - DR_LOG_LEVEL=debug
+    restart: unless-stopped
+
+  # Strict rate limit: 10 requests per minute per IP
+  api-strict:
+    image: hashicorp/http-echo:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "api.example.local"
+      dr.port: "5678"
+      dr.ratelimit: "10/m"
+      dr.ratelimit.by: "client_ip"
+    command: ["-text=API response (strict: 10/m)"]
+    restart: unless-stopped
+
+  # Relaxed rate limit: 1000 requests per minute
+  public-api:
+    image: hashicorp/http-echo:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "public.example.local"
+      dr.port: "5678"
+      dr.ratelimit: "1000/m"
+    command: ["-text=Public API response (relaxed: 1000/m)"]
+    restart: unless-stopped
+
+  # Rate limit by API key header + circuit breaker
+  admin-api:
+    image: hashicorp/http-echo:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "admin.example.local"
+      dr.port: "5678"
+      dr.ratelimit: "5/m"
+      dr.ratelimit.by: "X-API-Key"
+      dr.circuitbreaker: "3/30s"
+    command: ["-text=Admin API response (5/m per API key)"]
+    restart: unless-stopped

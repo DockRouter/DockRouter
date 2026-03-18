@@ -1,0 +1,125 @@
+# Microservices Example - Full microservices architecture
+#
+# This example demonstrates a realistic microservices setup with:
+# - Path-based routing to different services
+# - Per-service rate limiting and middleware
+# - Health checks on all services
+# - CORS for the frontend
+# - Compression and security headers
+#
+# Usage:
+#   Add to /etc/hosts:
+#     127.0.0.1 app.example.local
+#   docker-compose up -d
+#   curl http://app.example.local/         -> Frontend
+#   curl http://app.example.local/api/     -> API Gateway
+#   curl http://app.example.local/auth/    -> Auth Service
+#   curl http://app.example.local/static/  -> Static Assets
+
+version: "3.8"
+
+services:
+  dockrouter:
+    image: dockrouter/dockrouter:latest
+    container_name: dockrouter
+    ports:
+      - "80:80"
+      - "443:443"
+      - "9090:9090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - dockrouter-data:/data
+    environment:
+      - DR_LOG_LEVEL=info
+      - DR_ACCESS_LOG=true
+    restart: unless-stopped
+
+  # Frontend - serves the SPA
+  frontend:
+    image: hashicorp/http-echo:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "app.example.local"
+      dr.port: "5678"
+      dr.path: "/"
+      dr.priority: "1"
+      dr.compress: "true"
+      dr.cors.origins: "*"
+      dr.healthcheck.path: "/"
+      dr.healthcheck.interval: "15s"
+    command: ["-text=Frontend SPA"]
+    restart: unless-stopped
+
+  # API Gateway - main API endpoint
+  api:
+    image: hashicorp/http-echo:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "app.example.local"
+      dr.port: "5678"
+      dr.path: "/api"
+      dr.priority: "10"
+      dr.stripprefix: "/api"
+      dr.ratelimit: "200/m"
+      dr.compress: "true"
+      dr.cors.origins: "http://app.example.local"
+      dr.cors.methods: "GET,POST,PUT,DELETE,PATCH"
+      dr.maxbody: "5mb"
+      dr.retry: "2"
+      dr.healthcheck.path: "/"
+      dr.healthcheck.interval: "10s"
+      dr.healthcheck.threshold: "3"
+    command: ["-text=API Gateway Response"]
+    restart: unless-stopped
+
+  # Second API instance for load balancing
+  api-2:
+    image: hashicorp/http-echo:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "app.example.local"
+      dr.port: "5678"
+      dr.path: "/api"
+      dr.priority: "10"
+      dr.stripprefix: "/api"
+      dr.ratelimit: "200/m"
+      dr.loadbalancer: "leastconn"
+      dr.healthcheck.path: "/"
+    command: ["-text=API Gateway Response (Instance 2)"]
+    restart: unless-stopped
+
+  # Auth Service - authentication endpoints
+  auth:
+    image: hashicorp/http-echo:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "app.example.local"
+      dr.port: "5678"
+      dr.path: "/auth"
+      dr.priority: "10"
+      dr.stripprefix: "/auth"
+      dr.ratelimit: "20/m"
+      dr.maxbody: "1mb"
+      dr.healthcheck.path: "/"
+      dr.circuitbreaker: "5/30s"
+    command: ["-text=Auth Service Response"]
+    restart: unless-stopped
+
+  # Static asset server
+  static:
+    image: hashicorp/http-echo:latest
+    labels:
+      dr.enable: "true"
+      dr.host: "app.example.local"
+      dr.port: "5678"
+      dr.path: "/static"
+      dr.priority: "10"
+      dr.stripprefix: "/static"
+      dr.compress: "true"
+      dr.ratelimit: "500/m"
+      dr.healthcheck.path: "/"
+    command: ["-text=Static Asset Server"]
+    restart: unless-stopped
+
+volumes:
+  dockrouter-data:

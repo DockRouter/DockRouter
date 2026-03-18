@@ -39,6 +39,38 @@ cd tls-auto
 docker-compose up -d
 ```
 
+### WebSocket (`websocket/`)
+WebSocket proxying with sticky sessions for stateful connections.
+
+```bash
+cd websocket
+# Add hosts to /etc/hosts:
+# 127.0.0.1 ws.example.local chat.example.local
+docker-compose up -d
+# Test: wscat -c ws://ws.example.local/ws
+```
+
+### Rate Limiting (`rate-limiting/`)
+Per-IP and per-header rate limiting with circuit breaker.
+
+```bash
+cd rate-limiting
+# Add hosts to /etc/hosts:
+# 127.0.0.1 api.example.local public.example.local admin.example.local
+docker-compose up -d
+# Test: for i in $(seq 1 20); do curl -s -o /dev/null -w "%{http_code}\n" http://api.example.local; done
+```
+
+### Microservices (`microservices/`)
+Full microservices architecture with path-based routing, per-service middleware, health checks, and load balancing.
+
+```bash
+cd microservices
+# Add to /etc/hosts: 127.0.0.1 app.example.local
+docker-compose up -d
+# curl http://app.example.local/api/
+```
+
 ## Common Labels
 
 | Label | Description | Example |
