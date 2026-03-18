@@ -8,7 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Weighted round-robin load balancing strategy (`dr.loadbalancer=weighted`)
+- Comprehensive test coverage improvements across all packages
+  - `cmd/dockrouter`: 67.5% → 72.4% (+4.9%)
+  - `internal/proxy`: 89.6% → 95.7% (+6.1%)
+  - `internal/tls`: 80.3% → 80.9% (+0.6%)
+- New benchmark tests for router package (radix tree, backend pool selection)
+- WebSocket test coverage improvements with error handling tests
+- Rate limiter cleanup logic tests
+- CI badge added to README for build status visibility
+- Detailed README files for all examples:
+  - `examples/websocket/` - WebSocket proxying with sticky sessions
+  - `examples/rate-limiting/` - Rate limiting and circuit breaker patterns
+  - `examples/microservices/` - Complete microservices architecture
+- Dashboard embedded files tests
+- Proxy transport and error page tests
+- Extended poller tests for discovery package
+
+### Changed
+- WebSocket ServeHTTP coverage improved from 28.6% to 76.2%
+- Example documentation now includes architecture diagrams and testing instructions
+
+### Fixed
+- ACME thumbprint calculation now follows RFC 7638 (JWK Thumbprint)
+- Graceful shutdown now properly waits for active connections
+- Retry logic verified working in router package
 - `ParseLoadBalanceStrategy()` helper function for strategy parsing
 - `dr.weight` label support for weighted load balancing
 - X-Forwarded-For, X-Real-IP, CF-Connecting-IP header support in IP filtering
