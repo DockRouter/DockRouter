@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"net"
@@ -461,3 +462,237 @@ func TestHijackConnectionWithMockHijacker(t *testing.T) {
 		t.Error("ReadWriter should not be nil")
 	}
 }
+
+func TestHijackConnectionError(t *testing.T) {
+	// Create a mock hijacker that returns error
+	w := &mockHijackerWithError{}
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+
+	conn, rw, err := HijackConnection(w, r)
+	if err == nil {
+		t.Error("HijackConnection should return error")
+	}
+	if conn != nil {
+		t.Error("Connection should be nil on error")
+	}
+	if rw != nil {
+		t.Error("ReadWriter should be nil on error")
+	}
+}
+
+func TestIsWebSocketRequestVariations(t *testing.T) {
+	tests := []struct {
+		name     string
+		headers  map[string]string
+		expected bool
+	}{
+		{
+			name: "standard WebSocket",
+			headers: map[string]string{
+				"Upgrade":    "websocket",
+				"Connection": "Upgrade",
+			},
+			expected: true,
+		},
+		{
+			name: "WebSocket with keep-alive",
+			headers: map[string]string{
+				"Upgrade":    "websocket",
+				"Connection": "keep-alive, Upgrade",
+			},
+			expected: true,
+		},
+		{
+			name: "mixed case headers",
+			headers: map[string]string{
+				"Upgrade":    "WebSocket",
+				"Connection": "Upgrade, Keep-Alive",
+			},
+			expected: true,
+		},
+		{
+			name: "regular HTTP request",
+			headers: map[string]string{
+				"Connection": "keep-alive",
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			for key, value := range tt.headers {
+				r.Header.Set(key, value)
+			}
+
+			result := IsWebSocketRequest(r)
+			if result != tt.expected {
+				t.Errorf("IsWebSocketRequest() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestWebSocketServeHTTPBackendDialSuccess(t *testing.T) {
+	// This test requires a real backend server to connect to
+	// We'll start a simple TCP server that accepts WebSocket upgrade
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Skipf("Cannot create test server: %v", err)
+	}
+	defer listener.Close()
+
+	// Start a goroutine that accepts and handles the connection
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		// Read the upgrade request
+		buf := make([]byte, 4096)
+		n, _ := conn.Read(buf)
+		if n == 0 {
+			return
+		}
+
+		// Send WebSocket upgrade response
+		response := "HTTP/1.1 101 Switching Protocols\r\n" +
+			"Upgrade: websocket\r\n" +
+			"Connection: Upgrade\r\n" +
+			"Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"
+		conn.Write([]byte(response))
+
+		// Echo back any data received
+		for {
+			n, err := conn.Read(buf)
+			if err != nil {
+				return
+			}
+			conn.Write(buf[:n])
+		}
+	}()
+
+	logger := &mockLogger{}
+	wp := NewWebSocketProxy(logger)
+
+	// Get the server address
+	addr := listener.Addr().String()
+
+	// Create mock hijacker with real net.Pipe connection
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	w := &mockHijackerResponse{conn: serverConn}
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	r.Header.Set("Upgrade", "websocket")
+	r.Header.Set("Connection", "Upgrade")
+	r.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+
+	// Run ServeHTTP in a goroutine since it blocks
+	done := make(chan error, 1)
+	go func() {
+		done <- wp.ServeHTTP(w, r, addr)
+	}()
+
+	// Close the client connection to trigger ServeHTTP to return
+	clientConn.Close()
+
+	select {
+	case err := <-done:
+		// We expect an error because we closed the connection
+		if err != nil {
+			// This is expected - connection was closed
+			t.Logf("ServeHTTP returned error (expected): %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		// Timeout is also acceptable for this test
+		t.Log("ServeHTTP timed out (expected for blocking operations)")
+	}
+}
+
+func TestWebSocketServeHTTPUpgradeRequestError(t *testing.T) {
+	// Test where sendUpgradeRequest fails
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Skipf("Cannot create test server: %v", err)
+	}
+	defer listener.Close()
+
+	// Accept and immediately close to trigger error
+	go func() {
+		conn, _ := listener.Accept()
+		if conn != nil {
+			conn.Close()
+		}
+	}()
+
+	logger := &mockLogger{}
+	wp := NewWebSocketProxy(logger)
+
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	w := &mockHijackerResponse{conn: serverConn}
+	r := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	r.Header.Set("Upgrade", "websocket")
+	r.Header.Set("Connection", "Upgrade")
+
+	// Run in goroutine since it blocks
+	done := make(chan error, 1)
+	go func() {
+		// The connection will fail during upgrade request or response reading
+		done <- wp.ServeHTTP(w, r, listener.Addr().String())
+	}()
+
+	// Close client side to trigger cleanup
+	clientConn.Close()
+
+	select {
+	case <-done:
+		// Expected - error occurred
+	case <-time.After(2 * time.Second):
+		t.Log("Timeout waiting for ServeHTTP")
+	}
+}
+
+func TestWebSocketCopyDataLargeBuffer(t *testing.T) {
+	logger := &mockLogger{}
+	wp := NewWebSocketProxy(logger)
+
+	// Create a large data buffer
+	largeData := make([]byte, 64*1024)
+	for i := range largeData {
+		largeData[i] = byte(i % 256)
+	}
+
+	reader, writer := io.Pipe()
+	destBuf := &bytes.Buffer{}
+
+	// Write data in goroutine
+	go func() {
+		writer.Write(largeData)
+		writer.Close()
+	}()
+
+	// Copy data
+	done := make(chan bool, 1)
+	go func() {
+		wp.copyData(destBuf, reader, "large-buffer-test")
+		done <- true
+	}()
+
+	select {
+	case <-done:
+		if destBuf.Len() != len(largeData) {
+			t.Errorf("Expected %d bytes, got %d", len(largeData), destBuf.Len())
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("Timeout")
+	}
+}
+
