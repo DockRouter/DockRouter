@@ -168,6 +168,88 @@ func TestPollerStart(t *testing.T) {
 	cancel()
 }
 
+func TestPollerPollError(t *testing.T) {
+	// Test that poll handles errors gracefully
+	client, _ := NewDockerClient("")
+	poller := NewPoller(client, 100*time.Millisecond)
+
+	ch := make(chan []Container, 10)
+	ctx := context.Background()
+
+	// poll should handle errors without panicking
+	poller.poll(ctx, ch)
+
+	// Channel should be empty since error occurred (no real Docker)
+	select {
+	case <-ch:
+		t.Error("expected no containers when error occurs")
+	default:
+		// Expected - channel is empty
+	}
+}
+
+func TestPollerPollChannelFull(t *testing.T) {
+	client, _ := NewDockerClient("")
+	poller := NewPoller(client, 100*time.Millisecond)
+
+	// Create a channel with buffer 0 (blocking)
+	ch := make(chan []Container)
+	ctx := context.Background()
+
+	// This should not block forever due to select with default case
+	done := make(chan struct{})
+	go func() {
+		poller.poll(ctx, ch)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Expected - poll should complete without sending to full channel
+	case <-time.After(100 * time.Millisecond):
+		t.Error("poll should not block on full channel")
+	}
+}
+
+func TestPollerPollContextCancelled(t *testing.T) {
+	client, _ := NewDockerClient("")
+	poller := NewPoller(client, 100*time.Millisecond)
+
+	ch := make(chan []Container, 10)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	poller.poll(ctx, ch)
+
+	// Channel should be empty since context is cancelled
+	select {
+	case <-ch:
+		t.Error("expected no containers when context cancelled")
+	default:
+		// Expected - channel is empty
+	}
+}
+
+func TestPollerDifferentIntervals(t *testing.T) {
+	intervals := []time.Duration{
+		1 * time.Second,
+		5 * time.Second,
+		30 * time.Second,
+	}
+
+	client, _ := NewDockerClient("")
+
+	for _, interval := range intervals {
+		t.Run(interval.String(), func(t *testing.T) {
+			poller := NewPoller(client, interval)
+
+			if poller.interval != interval {
+				t.Errorf("interval: got %v, want %v", poller.interval, interval)
+			}
+		})
+	}
+}
+
 func TestRouteConfigValidation(t *testing.T) {
 	tests := []struct {
 		name    string
