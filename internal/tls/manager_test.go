@@ -9,11 +9,13 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -1105,3 +1107,125 @@ func TestManagerLoadFromDiskError(t *testing.T) {
 	// It may or may not error depending on implementation
 	_ = err
 }
+
+// MockACMEClient for testing provisionCertificate
+type MockACMEClient struct {
+	ACMEClient
+	RequestOrderFunc      func(domains []string) (*ACMEOrder, error)
+	ProcessAuthFunc       func(authURL string) error
+	FinalizeOrderFunc     func(order *ACMEOrder, csr []byte) error
+	DownloadCertFunc      func(url string) ([]byte, error)
+}
+
+func (m *MockACMEClient) RequestOrder(domains []string) (*ACMEOrder, error) {
+	if m.RequestOrderFunc != nil {
+		return m.RequestOrderFunc(domains)
+	}
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *MockACMEClient) processAuthorization(authURL string) error {
+	if m.ProcessAuthFunc != nil {
+		return m.ProcessAuthFunc(authURL)
+	}
+	return nil
+}
+
+func (m *MockACMEClient) FinalizeOrder(order *ACMEOrder, csr []byte) error {
+	if m.FinalizeOrderFunc != nil {
+		return m.FinalizeOrderFunc(order, csr)
+	}
+	return nil
+}
+
+func (m *MockACMEClient) DownloadCertificate(url string) ([]byte, error) {
+	if m.DownloadCertFunc != nil {
+		return m.DownloadCertFunc(url)
+	}
+	return nil, fmt.Errorf("not implemented")
+}
+
+func TestProvisionCertificateACMENil(t *testing.T) {
+	logger := &mockTLSLogger{}
+	store := NewStore(t.TempDir())
+
+	manager := NewManager(store, nil, nil, logger)
+
+	err := manager.provisionCertificate("example.com")
+	if err == nil {
+		t.Error("provisionCertificate should fail with nil ACME client")
+	}
+	if !strings.Contains(err.Error(), "ACME client not initialized") {
+		t.Errorf("Error should mention ACME client not initialized, got: %v", err)
+	}
+}
+
+func TestProvisionCertificateRequestOrderError(t *testing.T) {
+	logger := &mockTLSLogger{}
+	store := NewStore(t.TempDir())
+
+	mockACME := &MockACMEClient{
+		RequestOrderFunc: func(domains []string) (*ACMEOrder, error) {
+			return nil, fmt.Errorf("order creation failed")
+		},
+	}
+
+	manager := NewManager(store, &mockACME.ACMEClient, nil, logger)
+
+	err := manager.provisionCertificate("example.com")
+	if err == nil {
+		t.Error("provisionCertificate should fail when order creation fails")
+	}
+	if !strings.Contains(err.Error(), "failed to create order") {
+		t.Errorf("Error should mention failed to create order, got: %v", err)
+	}
+}
+
+func TestGenerateCSR(t *testing.T) {
+	logger := &mockTLSLogger{}
+	store := NewStore(t.TempDir())
+	manager := NewManager(store, nil, nil, logger)
+
+	// Generate a test key
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("Failed to generate key: %v", err)
+	}
+
+	csr, err := manager.generateCSR(privKey, "test.example.com")
+	if err != nil {
+		t.Errorf("generateCSR should succeed: %v", err)
+	}
+
+	if len(csr) == 0 {
+		t.Error("CSR should not be empty")
+	}
+}
+
+func TestEncodePrivateKey(t *testing.T) {
+	logger := &mockTLSLogger{}
+	store := NewStore(t.TempDir())
+	manager := NewManager(store, nil, nil, logger)
+
+	// Generate a test key
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("Failed to generate key: %v", err)
+	}
+
+	keyPEM, err := manager.encodePrivateKey(privKey)
+	if err != nil {
+		t.Errorf("encodePrivateKey should succeed: %v", err)
+	}
+
+	if len(keyPEM) == 0 {
+		t.Error("Key PEM should not be empty")
+	}
+
+	// Verify it's valid PEM
+	block, _ := pem.Decode(keyPEM)
+	if block == nil {
+		t.Error("Key PEM should be valid")
+	}
+}
+

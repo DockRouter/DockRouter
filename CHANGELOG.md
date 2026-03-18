@@ -7,8 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2024-03-18
+
 ### Added
-- Comprehensive test coverage improvements across all packages
+- Router radix tree optimization with sync.Pool (reduced allocations from 18 to 16 allocs/op)
+- Code of Conduct for community standards
+- GitHub issue templates (bug report, feature request, question)
+- Comprehensive benchmark suite for router package
+- Additional TLS manager tests for error handling
+
+### Changed
+- WebSocket ServeHTTP coverage improved from 28.6% to 76.2%
+- Proxy package coverage increased to 95.7%
+- Example documentation with detailed README files
+- CI badge added to README
+
+## [1.0.0] - 2024-03-17
   - `cmd/dockrouter`: 67.5% → 72.4% (+4.9%)
   - `internal/proxy`: 89.6% → 95.7% (+6.1%)
   - `internal/tls`: 80.3% → 80.9% (+0.6%)

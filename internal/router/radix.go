@@ -6,6 +6,27 @@ import (
 	"sync"
 )
 
+// nodePool reduces allocations during tree operations
+var nodePool = sync.Pool{
+	New: func() interface{} {
+		return &RadixNode{}
+	},
+}
+
+// getNode gets a node from the pool
+func getNode() *RadixNode {
+	return nodePool.Get().(*RadixNode)
+}
+
+// putNode returns a node to the pool
+func putNode(n *RadixNode) {
+	n.path = ""
+	n.children = n.children[:0]
+	n.route = nil
+	n.isLeaf = false
+	nodePool.Put(n)
+}
+
 // RadixNode represents a node in the radix tree
 type RadixNode struct {
 	path     string
@@ -64,10 +85,9 @@ func (t *RadixTree) insert(node *RadixNode, path string, route *Route) {
 			}
 
 			// Need to split
-			splitNode := &RadixNode{
-				path:     prefix,
-				children: []*RadixNode{},
-			}
+			splitNode := getNode()
+			splitNode.path = prefix
+			splitNode.children = make([]*RadixNode, 0, 2)
 
 			// Update existing child
 			child.path = child.path[len(prefix):]
@@ -76,11 +96,10 @@ func (t *RadixTree) insert(node *RadixNode, path string, route *Route) {
 			// Create new child for remaining path
 			remaining := path[len(prefix):]
 			if remaining != "" {
-				newChild := &RadixNode{
-					path:   remaining,
-					route:  route,
-					isLeaf: true,
-				}
+				newChild := getNode()
+				newChild.path = remaining
+				newChild.route = route
+				newChild.isLeaf = true
 				splitNode.children = append(splitNode.children, newChild)
 			} else {
 				splitNode.route = route
@@ -93,11 +112,11 @@ func (t *RadixTree) insert(node *RadixNode, path string, route *Route) {
 	}
 
 	// No common prefix, add as new child
-	node.children = append(node.children, &RadixNode{
-		path:   path,
-		route:  route,
-		isLeaf: true,
-	})
+	newNode := getNode()
+	newNode.path = path
+	newNode.route = route
+	newNode.isLeaf = true
+	node.children = append(node.children, newNode)
 }
 
 // Match finds the longest prefix match for a path
