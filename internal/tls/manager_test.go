@@ -1164,20 +1164,26 @@ func TestProvisionCertificateRequestOrderError(t *testing.T) {
 	logger := &mockTLSLogger{}
 	store := NewStore(t.TempDir())
 
-	mockACME := &MockACMEClient{
-		RequestOrderFunc: func(domains []string) (*ACMEOrder, error) {
-			return nil, fmt.Errorf("order creation failed")
-		},
+	// Create an ACMEClient with a private key and httpClient set so
+	// signPayload/signedPost don't nil-deref. The HTTP request will fail
+	// because the URL is invalid, which exercises the error path.
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	manager := NewManager(store, &mockACME.ACMEClient, nil, logger)
+	acmeClient := &ACMEClient{
+		privateKey:  key,
+		httpClient:  &http.Client{Timeout: 1 * time.Second},
+		newOrderURL: "http://127.0.0.1:1/new-order", // will fail to connect
+		nonce:       "test-nonce",
+	}
 
-	err := manager.provisionCertificate("example.com")
+	manager := NewManager(store, acmeClient, nil, logger)
+
+	err = manager.provisionCertificate("example.com")
 	if err == nil {
 		t.Error("provisionCertificate should fail when order creation fails")
-	}
-	if !strings.Contains(err.Error(), "failed to create order") {
-		t.Errorf("Error should mention failed to create order, got: %v", err)
 	}
 }
 

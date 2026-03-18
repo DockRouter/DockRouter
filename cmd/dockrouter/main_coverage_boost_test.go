@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +15,7 @@ import (
 	"github.com/DockRouter/dockrouter/internal/discovery"
 	"github.com/DockRouter/dockrouter/internal/health"
 	"github.com/DockRouter/dockrouter/internal/log"
+	"github.com/DockRouter/dockrouter/internal/metrics"
 	"github.com/DockRouter/dockrouter/internal/router"
 	tlspkg "github.com/DockRouter/dockrouter/internal/tls"
 )
@@ -521,4 +524,178 @@ func TestAppStartCancelledCtx(t *testing.T) {
 	cancel()
 
 	app.start(ctx)
+}
+
+// --- printVersion output test ---
+
+func TestPrintVersionOutput(t *testing.T) {
+	oldVersion := version
+	oldBuildTime := buildTime
+	defer func() {
+		version = oldVersion
+		buildTime = oldBuildTime
+	}()
+
+	version = "1.2.3-test"
+	buildTime = "2025-01-15T10:30:00Z"
+
+	// Capture stdout
+	output := captureOutput(func() {
+		printVersion()
+	})
+
+	if !strings.Contains(output, "1.2.3-test") {
+		t.Errorf("output missing version: %s", output)
+	}
+	if !strings.Contains(output, "2025-01-15T10:30:00Z") {
+		t.Errorf("output missing build time: %s", output)
+	}
+	if !strings.Contains(output, "DockRouter") {
+		t.Errorf("output missing project name: %s", output)
+	}
+	if !strings.Contains(output, "github.com/DockRouter") {
+		t.Errorf("output missing URL: %s", output)
+	}
+}
+
+// captureOutput captures stdout during function execution
+func captureOutput(f func()) string {
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	f()
+
+	w.Close()
+	os.Stdout = old
+
+	var buf strings.Builder
+	io.Copy(&buf, r)
+	return buf.String()
+}
+
+// --- handleCertificates tests ---
+
+func TestHandleCertificatesNilManager(t *testing.T) {
+	logger := log.NewLogger(nil, log.LevelInfo)
+	app := &App{
+		logger:     logger,
+		tlsManager: nil,
+	}
+
+	req := httptest.NewRequest("GET", "/api/v1/certificates", nil)
+	rec := httptest.NewRecorder()
+	app.handleCertificates(rec, req)
+
+	if rec.Body.String() != "[]" {
+		t.Errorf("body = %s, want []", rec.Body.String())
+	}
+}
+
+// --- App.initialize tests ---
+
+func TestAppInitializeWithTLS(t *testing.T) {
+	logger := log.NewLogger(nil, log.LevelInfo)
+	app := &App{
+		logger: logger,
+		config: &config.Config{
+			HTTPPort:    0,
+			HTTPSPort:   0,
+			ACMEEmail:   "", // Empty ACME email skips TLS manager initialization
+			AccessLog:   false,
+			LogLevel:    "info",
+			DataDir:     t.TempDir(),
+			DefaultTLS:  "off",
+		},
+	}
+
+	err := app.initialize()
+	if err != nil {
+		t.Fatalf("initialize failed: %v", err)
+	}
+
+	if app.routeTable == nil {
+		t.Error("routeTable should be initialized")
+	}
+	if app.healthChecker == nil {
+		t.Error("healthChecker should be initialized")
+	}
+	if app.challengeSolver == nil {
+		t.Error("challengeSolver should be initialized")
+	}
+}
+
+// --- handleConfig test ---
+
+func TestHandleConfig(t *testing.T) {
+	logger := log.NewLogger(nil, log.LevelInfo)
+	app := &App{
+		logger: logger,
+		config: &config.Config{
+			HTTPPort:  8080,
+			HTTPSPort: 8443,
+			Admin:     true,
+			ACMEEmail: "test@example.com",
+			LogLevel:  "debug",
+		},
+	}
+
+	req := httptest.NewRequest("GET", "/api/v1/config", nil)
+	rec := httptest.NewRecorder()
+	app.handleConfig(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "8080") {
+		t.Errorf("body should contain HTTP port: %s", body)
+	}
+	if !strings.Contains(body, "8443") {
+		t.Errorf("body should contain HTTPS port: %s", body)
+	}
+}
+
+// --- handleHealth test ---
+
+func TestHandleHealth(t *testing.T) {
+	logger := log.NewLogger(nil, log.LevelInfo)
+	app := &App{
+		logger: logger,
+	}
+
+	req := httptest.NewRequest("GET", "/api/v1/health", nil)
+	rec := httptest.NewRecorder()
+	app.handleHealth(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d", rec.Code)
+	}
+
+	if !strings.Contains(rec.Body.String(), "healthy") {
+		t.Errorf("body should contain healthy: %s", rec.Body.String())
+	}
+}
+
+// --- handleMetrics test ---
+
+func TestHandleMetrics(t *testing.T) {
+	logger := log.NewLogger(nil, log.LevelInfo)
+	app := &App{
+		logger:  logger,
+		metrics: metrics.NewCollector(),
+	}
+
+	req := httptest.NewRequest("GET", "/api/v1/metrics", nil)
+	rec := httptest.NewRecorder()
+	app.handleMetrics(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d", rec.Code)
+	}
+
+	if ct := rec.Header().Get("Content-Type"); ct != "text/plain" {
+		t.Errorf("Content-Type = %s", ct)
+	}
 }

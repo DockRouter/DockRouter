@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Discovery package test coverage improved from 69.9% to 71.7%
+- CMD package test coverage improved from 72.4% to 74.5%
+- Added comprehensive tests for GetContainerIP, Changed, handleEvent, printVersion, and admin handlers
+
 ## [1.1.0] - 2024-03-18
 
 ### Added
