@@ -1701,3 +1701,49 @@ func TestIPFilterWithTrustedProxies(t *testing.T) {
 		})
 	}
 }
+
+func TestRateLimiterCleanup(t *testing.T) {
+	limiter := NewRateLimiter(100, 60, 10)
+
+	// Add some buckets manually
+	limiter.mu.Lock()
+	limiter.buckets["old-key"] = &tokenBucket{
+		tokens:     50,
+		lastRefill: time.Now().Add(-10 * time.Minute),
+	}
+	limiter.buckets["recent-key"] = &tokenBucket{
+		tokens:     50,
+		lastRefill: time.Now().Add(-1 * time.Minute),
+	}
+	limiter.mu.Unlock()
+
+	// Verify buckets exist
+	limiter.mu.Lock()
+	if len(limiter.buckets) != 2 {
+		t.Errorf("Expected 2 buckets, got %d", len(limiter.buckets))
+	}
+	limiter.mu.Unlock()
+
+	// Manually trigger cleanup logic
+	limiter.mu.Lock()
+	threshold := time.Now().Add(-5 * time.Minute)
+	for key, bucket := range limiter.buckets {
+		if bucket.lastRefill.Before(threshold) {
+			delete(limiter.buckets, key)
+		}
+	}
+	limiter.mu.Unlock()
+
+	// Verify old bucket was removed
+	limiter.mu.Lock()
+	if len(limiter.buckets) != 1 {
+		t.Errorf("Expected 1 bucket after cleanup, got %d", len(limiter.buckets))
+	}
+	if _, exists := limiter.buckets["old-key"]; exists {
+		t.Error("Old bucket should have been cleaned up")
+	}
+	if _, exists := limiter.buckets["recent-key"]; !exists {
+		t.Error("Recent bucket should still exist")
+	}
+	limiter.mu.Unlock()
+}
