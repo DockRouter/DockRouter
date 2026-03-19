@@ -11,9 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Discovery package test coverage improved from 69.9% to 72.2%
 - CMD package test coverage improved from 72.4% to 77.1%
 - Router package test coverage improved from 96.7% to 97.9%
-- TLS package test coverage improved from 80.9% to 83.0%
+- TLS package test coverage improved from 80.9% to 84.4%
 - Middleware package test coverage improved from 95.6% to 97.4%
-- Overall project coverage improved to 88.5%
+- Overall project coverage improved to 88.7%
 - Added comprehensive tests for GetContainerIP, Changed, handleEvent, printVersion, admin handlers, and weighted round robin edge cases
 - Added TLS tests for processAuthorization, provisionCertificate error paths, and challenge solver edge cases
 - Fixed duplicate test declarations in discovery package
@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added discovery tests: onContainerStop with existing container, ParseLabels edge cases
 - Added discovery tests: GetContainerName/GetContainerImage edge cases
 - Added TLS tests: Store round-trip, delete existing, list multiple, IsValid expired/almost-expired
+- Added TLS tests: ACME client error paths (fetchDirectory, fetchNonce, createOrGetAccount, RequestOrder, etc.)
 
 ## [1.1.0] - 2024-03-18
 

@@ -947,3 +947,113 @@ func TestChallengeSolverHandlerWithToken(t *testing.T) {
 	}
 }
 
+// --- ACME client error paths ---
+
+func TestACMEClientFetchDirectoryError(t *testing.T) {
+	client := NewACMEClient("://invalid-url", "test@example.com")
+	err := client.fetchDirectory()
+	if err == nil {
+		t.Error("fetchDirectory should fail with invalid URL")
+	}
+}
+
+func TestACMEClientFetchNonceError(t *testing.T) {
+	client := NewACMEClient("://invalid-url", "test@example.com")
+	err := client.fetchNonce()
+	if err == nil {
+		t.Error("fetchNonce should fail with invalid URL")
+	}
+}
+
+func TestACMEClientCreateOrGetAccountError(t *testing.T) {
+	client := NewACMEClient("://invalid-url", "test@example.com")
+	// Set a private key to skip key generation
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	client.privateKey = key
+
+	err := client.createOrGetAccount()
+	if err == nil {
+		t.Error("createOrGetAccount should fail with invalid URL")
+	}
+}
+
+func TestACMEClientRequestOrderError(t *testing.T) {
+	client := NewACMEClient("://invalid-url", "test@example.com")
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	client.privateKey = key
+
+	_, err := client.RequestOrder([]string{"example.com"})
+	if err == nil {
+		t.Error("RequestOrder should fail with invalid URL")
+	}
+}
+
+func TestACMEClientGetAuthorizationError(t *testing.T) {
+	client := NewACMEClient("://invalid-url", "test@example.com")
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	client.privateKey = key
+
+	_, err := client.GetAuthorization("://invalid-url")
+	if err == nil {
+		t.Error("GetAuthorization should fail with invalid URL")
+	}
+}
+
+func TestACMEClientGetChallengeError(t *testing.T) {
+	client := NewACMEClient("://invalid-url", "test@example.com")
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	client.privateKey = key
+
+	_, err := client.GetChallenge("://invalid-url")
+	if err == nil {
+		t.Error("GetChallenge should fail with invalid URL")
+	}
+}
+
+func TestACMEClientTriggerChallengeError(t *testing.T) {
+	client := NewACMEClient("://invalid-url", "test@example.com")
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	client.privateKey = key
+
+	_, err := client.TriggerChallenge("://invalid-url")
+	if err == nil {
+		t.Error("TriggerChallenge should fail with invalid URL")
+	}
+}
+
+func TestACMEClientFinalizeOrderError(t *testing.T) {
+	client := NewACMEClient("://invalid-url", "test@example.com")
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	client.privateKey = key
+
+	order := &ACMEOrder{FinalizeURL: "://invalid-url"}
+	csr := []byte("test-csr")
+
+	err := client.FinalizeOrder(order, csr)
+	if err == nil {
+		t.Error("FinalizeOrder should fail with invalid URL")
+	}
+}
+
+func TestACMEClientDownloadCertificateError(t *testing.T) {
+	client := NewACMEClient("://invalid-url", "test@example.com")
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	client.privateKey = key
+
+	_, err := client.DownloadCertificate("://invalid-url")
+	if err == nil {
+		t.Error("DownloadCertificate should fail with invalid URL")
+	}
+}
+
+func TestACMEClientPollOrderError(t *testing.T) {
+	client := NewACMEClient("://invalid-url", "test@example.com")
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	client.privateKey = key
+
+	_, err := client.PollOrder("://invalid-url", "valid", 100*time.Millisecond)
+	if err == nil {
+		t.Error("PollOrder should fail with invalid URL")
+	}
+}
+
