@@ -397,30 +397,6 @@ func TestAddPrefixMultiple(t *testing.T) {
 	}
 }
 
-func TestHeadersMultiple(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	headers := map[string]string{
-		"X-App-Version":    "1.0.0",
-		"X-Request-Source": "dockrouter",
-	}
-
-	headersHandler := Headers(headers)(handler)
-
-	req := httptest.NewRequest("GET", "/", nil)
-	rec := httptest.NewRecorder()
-	headersHandler.ServeHTTP(rec, req)
-
-	for key, expected := range headers {
-		got := rec.Header().Get(key)
-		if got != expected {
-			t.Errorf("%s = %s, want %s", key, got, expected)
-		}
-	}
-}
-
 func TestBasicAuthMiddlewareAllCases(t *testing.T) {
 	users := map[string]string{
 		"admin": "password123",

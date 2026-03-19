@@ -281,15 +281,3 @@ func TestEncodeJSON(t *testing.T) {
 	}
 	_ = result
 }
-
-func TestJSONMarshal(t *testing.T) {
-	data := map[string]interface{}{"test": 123}
-	result, err := jsonMarshal(data)
-
-	// The current implementation returns empty buffer
-	// This test verifies it doesn't panic
-	if err != nil {
-		t.Errorf("jsonMarshal returned error: %v", err)
-	}
-	_ = result
-}

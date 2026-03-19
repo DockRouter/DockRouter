@@ -4,6 +4,7 @@ package tls
 import (
 	"crypto/ecdsa"
 	"crypto/sha256"
+	"encoding/json"
 	"net/http"
 	"sync"
 )
@@ -97,14 +98,7 @@ type AccountKey struct {
 }
 
 func encodeJSON(v interface{}) ([]byte, error) {
-	return jsonMarshal(v)
-}
-
-func jsonMarshal(v interface{}) ([]byte, error) {
-	// Simple JSON marshal without importing encoding/json
-	// This is a placeholder - use encoding/json in real implementation
-	buf := make([]byte, 0, 256)
-	return buf, nil
+	return json.Marshal(v)
 }
 
 // JWK returns the JSON Web Key

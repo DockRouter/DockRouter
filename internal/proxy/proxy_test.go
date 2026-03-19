@@ -75,21 +75,6 @@ func TestIsWebSocketRequest(t *testing.T) {
 	}
 }
 
-func TestCanUpgrade(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
-	req.Header.Set("Upgrade", "websocket")
-	req.Header.Set("Connection", "Upgrade")
-
-	if !CanUpgrade(req) {
-		t.Error("CanUpgrade should return true for valid WebSocket request")
-	}
-
-	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
-	if CanUpgrade(req2) {
-		t.Error("CanUpgrade should return false for non-WebSocket request")
-	}
-}
-
 func TestNewProxy(t *testing.T) {
 	logger := &mockLogger{}
 	proxy := NewProxy(logger)

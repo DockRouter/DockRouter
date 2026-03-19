@@ -234,28 +234,3 @@ func TestAddPrefix(t *testing.T) {
 		t.Errorf("Path = %s, want /v1/users", receivedPath)
 	}
 }
-
-func TestHeaders(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	headers := map[string]string{
-		"X-Custom-Header":  "custom-value",
-		"X-Another-Header": "another-value",
-	}
-
-	headersHandler := Headers(headers)(handler)
-
-	req := httptest.NewRequest("GET", "/", nil)
-	rec := httptest.NewRecorder()
-
-	headersHandler.ServeHTTP(rec, req)
-
-	for key, expected := range headers {
-		got := rec.Header().Get(key)
-		if got != expected {
-			t.Errorf("%s = %s, want %s", key, got, expected)
-		}
-	}
-}

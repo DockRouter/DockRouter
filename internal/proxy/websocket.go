@@ -155,12 +155,6 @@ func (wp *WebSocketProxy) copyData(dst io.Writer, src io.Reader, direction strin
 	}
 }
 
-// CanUpgrade checks if WebSocket upgrade is possible
-func CanUpgrade(r *http.Request) bool {
-	// Check for WebSocket upgrade headers
-	return IsWebSocketRequest(r)
-}
-
 // HijackConnection hijacks the connection for WebSocket
 func HijackConnection(w http.ResponseWriter, r *http.Request) (net.Conn, *bufio.ReadWriter, error) {
 	hijacker, ok := w.(http.Hijacker)

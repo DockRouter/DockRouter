@@ -3,7 +3,6 @@ package proxy
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -148,78 +147,6 @@ func (p *Proxy) SetTimeout(d time.Duration) {
 	if t, ok := p.transport.(*http.Transport); ok {
 		t.ResponseHeaderTimeout = d
 	}
-}
-
-// StreamProxy handles streaming responses (SSE, chunked)
-type StreamProxy struct {
-	proxy *Proxy
-}
-
-// NewStreamProxy creates a streaming proxy
-func NewStreamProxy(proxy *Proxy) *StreamProxy {
-	return &StreamProxy{proxy: proxy}
-}
-
-// ServeHTTP handles streaming requests with flush support
-func (sp *StreamProxy) ServeHTTP(w http.ResponseWriter, r *http.Request, target string) error {
-	// Check if flusher is supported
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		return sp.proxy.ServeHTTP(w, r, target)
-	}
-
-	// Create request
-	targetURL, err := url.Parse("http://" + target)
-	if err != nil {
-		return err
-	}
-
-	// Copy request
-	req := r.Clone(r.Context())
-	req.URL = targetURL
-	req.Host = targetURL.Host
-
-	// Remove hop-by-hop headers
-	removeHopHeaders(req.Header)
-
-	// Set forwarded headers
-	sp.proxy.setForwardedHeaders(req, r)
-
-	// Send request
-	client := &http.Client{
-		Transport: sp.proxy.transport,
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	// Copy headers
-	for k, v := range resp.Header {
-		w.Header()[k] = v
-	}
-	w.WriteHeader(resp.StatusCode)
-
-	// Stream response
-	flusher.Flush()
-
-	buf := make([]byte, 4096)
-	for {
-		n, err := resp.Body.Read(buf)
-		if n > 0 {
-			w.Write(buf[:n])
-			flusher.Flush()
-		}
-		if err != nil {
-			if err != io.EOF {
-				return err
-			}
-			break
-		}
-	}
-
-	return nil
 }
 
 // removeHopHeaders removes hop-by-hop headers

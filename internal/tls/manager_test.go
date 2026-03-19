@@ -1124,13 +1124,6 @@ func (m *MockACMEClient) RequestOrder(domains []string) (*ACMEOrder, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (m *MockACMEClient) processAuthorization(authURL string) error {
-	if m.ProcessAuthFunc != nil {
-		return m.ProcessAuthFunc(authURL)
-	}
-	return nil
-}
-
 func (m *MockACMEClient) FinalizeOrder(order *ACMEOrder, csr []byte) error {
 	if m.FinalizeOrderFunc != nil {
 		return m.FinalizeOrderFunc(order, csr)

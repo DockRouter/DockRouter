@@ -6,44 +6,6 @@ import (
 	"time"
 )
 
-// mockDockerClient implements a mock Docker client for testing
-type mockDockerClient struct {
-	listContainersFunc   func(ctx context.Context) ([]Container, error)
-	inspectContainerFunc func(ctx context.Context, id string) (*ContainerDetail, error)
-	eventsStreamFunc     func(ctx context.Context, filters map[string]string) (<-chan Event, error)
-	listNetworksFunc     func(ctx context.Context) ([]Network, error)
-}
-
-func (m *mockDockerClient) ListContainers(ctx context.Context) ([]Container, error) {
-	if m.listContainersFunc != nil {
-		return m.listContainersFunc(ctx)
-	}
-	return nil, nil
-}
-
-func (m *mockDockerClient) InspectContainer(ctx context.Context, id string) (*ContainerDetail, error) {
-	if m.inspectContainerFunc != nil {
-		return m.inspectContainerFunc(ctx, id)
-	}
-	return nil, nil
-}
-
-func (m *mockDockerClient) EventsStream(ctx context.Context, filters map[string]string) (<-chan Event, error) {
-	if m.eventsStreamFunc != nil {
-		return m.eventsStreamFunc(ctx, filters)
-	}
-	ch := make(chan Event)
-	close(ch)
-	return ch, nil
-}
-
-func (m *mockDockerClient) ListNetworks(ctx context.Context) ([]Network, error) {
-	if m.listNetworksFunc != nil {
-		return m.listNetworksFunc(ctx)
-	}
-	return nil, nil
-}
-
 // TestOnContainerStartSuccess tests onContainerStart with a successful inspect
 func TestOnContainerStartSuccess(t *testing.T) {
 	logger := &mockLogger{}
@@ -908,30 +870,6 @@ func TestGetContainerIPAllNetworks(t *testing.T) {
 			}
 		})
 	}
-}
-
-// mockContainerInspector is a DockerClient that can inspect containers
-type mockContainerInspector struct {
-	inspectResult *ContainerDetail
-	inspectError  error
-}
-
-func (m *mockContainerInspector) InspectContainer(ctx context.Context, id string) (*ContainerDetail, error) {
-	return m.inspectResult, m.inspectError
-}
-
-func (m *mockContainerInspector) ListContainers(ctx context.Context) ([]Container, error) {
-	return nil, nil
-}
-
-func (m *mockContainerInspector) EventsStream(ctx context.Context, filters map[string]string) (<-chan Event, error) {
-	ch := make(chan Event)
-	close(ch)
-	return ch, nil
-}
-
-func (m *mockContainerInspector) ListNetworks(ctx context.Context) ([]Network, error) {
-	return nil, nil
 }
 
 // TestOnContainerStartWithMockClient tests onContainerStart with a mock client
