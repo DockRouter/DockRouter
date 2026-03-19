@@ -660,7 +660,162 @@ func TestEncodePrivateKeySuccess(t *testing.T) {
 	}
 }
 
-// --- Renew tests ---
+// --- Store.Save edge cases ---
+
+func TestStoreSaveAndLoadRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+
+	// Generate test certificate
+	certPEM, keyPEM := boostGenerateTestCertPEM(t)
+
+	// Save
+	err := store.Save("test.com", certPEM, keyPEM)
+	if err != nil {
+		t.Fatalf("Save error: %v", err)
+	}
+
+	// Load
+	loadedCert, loadedKey, err := store.LoadPEM("test.com")
+	if err != nil {
+		t.Fatalf("LoadPEM error: %v", err)
+	}
+
+	// Verify
+	if string(loadedCert) != string(certPEM) {
+		t.Error("Certificate mismatch")
+	}
+	if string(loadedKey) != string(keyPEM) {
+		t.Error("Key mismatch")
+	}
+}
+
+// --- Store.Delete edge cases ---
+
+func TestStoreDeleteExisting(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+
+	// Create a certificate
+	certPEM, keyPEM := boostGenerateTestCertPEM(t)
+	store.Save("delete-test.com", certPEM, keyPEM)
+
+	// Verify it exists
+	if !store.Exists("delete-test.com") {
+		t.Fatal("Certificate should exist before deletion")
+	}
+
+	// Delete
+	err := store.Delete("delete-test.com")
+	if err != nil {
+		t.Errorf("Delete error: %v", err)
+	}
+
+	// Verify it's gone
+	if store.Exists("delete-test.com") {
+		t.Error("Certificate should not exist after deletion")
+	}
+}
+
+// --- Manager.GetCertificate edge cases ---
+
+func TestManagerGetCertificateNotFound(t *testing.T) {
+	store := NewStore(t.TempDir())
+	manager := NewManager(store, nil, nil, &boostTestLogger{})
+
+	// Try to get certificate for non-existent domain
+	hello := &tls.ClientHelloInfo{ServerName: "nonexistent.com"}
+	cert, err := manager.GetCertificate(hello)
+
+	// Should return error since cert doesn't exist and no ACME
+	if err == nil {
+		t.Error("GetCertificate should error for non-existent domain without ACME")
+	}
+	if cert != nil {
+		t.Error("Certificate should be nil on error")
+	}
+}
+
+// --- Store.List with multiple certificates ---
+
+func TestStoreListMultiple(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+
+	// Create multiple certificates
+	certPEM, keyPEM := boostGenerateTestCertPEM(t)
+
+	domains := []string{"a.com", "b.com", "c.com"}
+	for _, domain := range domains {
+		store.Save(domain, certPEM, keyPEM)
+		store.SaveMeta(domain, &CertMeta{
+			Domain:    domain,
+			Expiry:    time.Now().Add(90 * 24 * time.Hour).Unix(),
+			Issuer:    "test",
+			CreatedAt: time.Now().Unix(),
+		})
+	}
+
+	// List all
+	certs, err := store.List()
+	if err != nil {
+		t.Fatalf("List error: %v", err)
+	}
+
+	if len(certs) != 3 {
+		t.Errorf("Expected 3 certificates, got %d", len(certs))
+	}
+}
+
+// --- IsValid edge cases ---
+
+func TestIsValidExpired(t *testing.T) {
+	// Create an expired certificate
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "expired.com"},
+		NotBefore:    time.Now().Add(-365 * 24 * time.Hour),
+		NotAfter:     time.Now().Add(-1 * time.Hour), // Expired
+		DNSNames:     []string{"expired.com"},
+	}
+
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	certDER, _ := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+
+	// Should not be valid
+	valid, err := IsValid(certPEM, 30*24*time.Hour)
+	if err != nil {
+		t.Errorf("IsValid error: %v", err)
+	}
+	if valid {
+		t.Error("Expired certificate should not be valid")
+	}
+}
+
+func TestIsValidAlmostExpired(t *testing.T) {
+	// Create a certificate that expires soon
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "almost-expired.com"},
+		NotBefore:    time.Now().Add(-30 * 24 * time.Hour),
+		NotAfter:     time.Now().Add(10 * 24 * time.Hour), // Expires in 10 days
+		DNSNames:     []string{"almost-expired.com"},
+	}
+
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	certDER, _ := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+
+	// Check if valid for 30 days (should fail since it expires in 10)
+	valid, err := IsValid(certPEM, 30*24*time.Hour)
+	if err != nil {
+		t.Errorf("IsValid error: %v", err)
+	}
+	if valid {
+		t.Error("Almost expired certificate should not be valid for 30 days")
+	}
+}
 
 func TestRenewNilACME(t *testing.T) {
 	store := NewStore(t.TempDir())

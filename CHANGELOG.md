@@ -27,7 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added TLS tests: provisionCertificate nil ACME, generateCSR, encodePrivateKey, Renew nil ACME
 - Added CMD tests: start with HTTP only, initialize with data dir, shutdown edge cases, certificates handler
 - Added discovery tests: doRequest/doStreamRequest error handling, Sync context cancellation, pollLoop/watchEvents cancellation
-- Added TLS tests: Store.List empty, ACME Initialize invalid URL, Challenge solver handler tests
+- Added discovery tests: onContainerStop with existing container, ParseLabels edge cases
+- Added discovery tests: GetContainerName/GetContainerImage edge cases
+- Added TLS tests: Store round-trip, delete existing, list multiple, IsValid expired/almost-expired
 
 ## [1.1.0] - 2024-03-18
 
