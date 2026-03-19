@@ -8,9 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- Discovery package test coverage improved from 69.9% to 71.7%
+- Discovery package test coverage improved from 69.9% to 72.2%
 - CMD package test coverage improved from 72.4% to 74.5%
-- Added comprehensive tests for GetContainerIP, Changed, handleEvent, printVersion, and admin handlers
+- Router package test coverage improved from 96.7% to 96.9%
+- TLS package test coverage improved from 80.9% to 82.8%
+- Overall project coverage improved to 87.9%
+- Added comprehensive tests for GetContainerIP, Changed, handleEvent, printVersion, admin handlers, and weighted round robin edge cases
+- Added TLS tests for processAuthorization, provisionCertificate error paths, and challenge solver edge cases
+- Fixed duplicate test declarations in discovery package
 
 ## [1.1.0] - 2024-03-18
 

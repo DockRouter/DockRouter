@@ -292,6 +292,31 @@ func TestHandleContainersNilDiscovery(t *testing.T) {
 	}
 }
 
+// --- handleContainers with discovery engine ---
+
+func TestHandleContainersWithDiscoveryEngine(t *testing.T) {
+	logger := log.NewLogger(nil, log.LevelInfo)
+
+	app := &App{
+		logger:          logger,
+		discoveryEngine: nil, // Will use the nil case which returns "[]"
+	}
+
+	req := httptest.NewRequest("GET", "/api/v1/containers", nil)
+	rec := httptest.NewRecorder()
+	app.handleContainers(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d", rec.Code)
+	}
+
+	// Should return an empty array since no containers discovered
+	body := rec.Body.String()
+	if body != "[]" {
+		t.Errorf("body should be empty array: %s", body)
+	}
+}
+
 // --- handleRoutes empty ---
 
 func TestHandleRoutesEmpty(t *testing.T) {

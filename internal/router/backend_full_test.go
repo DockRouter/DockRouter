@@ -279,6 +279,30 @@ func TestBackendPoolSelectWeightedRoundRobinEqualWeights(t *testing.T) {
 	}
 }
 
+func TestBackendPoolSelectWeightedRoundRobinZeroWeight(t *testing.T) {
+	pool := NewBackendPool(WeightedRoundRobin)
+	// Zero weight should default to 1
+	pool.Add(&BackendTarget{Address: "10.0.0.1:8080", Weight: 0, Healthy: true})
+	pool.Add(&BackendTarget{Address: "10.0.0.2:8080", Weight: 0, Healthy: true})
+
+	// Both should be selected since weights default to 1
+	selected := pool.Select("")
+	if selected == nil {
+		t.Fatal("Select should not return nil")
+	}
+
+	// Verify both backends can be selected
+	found := map[string]bool{}
+	for i := 0; i < 10; i++ {
+		s := pool.Select("")
+		found[s.Address] = true
+	}
+
+	if len(found) != 2 {
+		t.Errorf("Expected both backends to be selected, got %d", len(found))
+	}
+}
+
 func TestParseLoadBalanceStrategy(t *testing.T) {
 	tests := []struct {
 		input    string

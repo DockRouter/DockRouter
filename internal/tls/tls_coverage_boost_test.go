@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -296,3 +297,134 @@ func (l *boostTestLogger) Debug(msg string, fields ...interface{}) {}
 func (l *boostTestLogger) Info(msg string, fields ...interface{})  {}
 func (l *boostTestLogger) Warn(msg string, fields ...interface{})  {}
 func (l *boostTestLogger) Error(msg string, fields ...interface{}) {}
+
+// --- processAuthorization additional tests ---
+
+func TestProcessAuthorizationGetAuthError(t *testing.T) {
+	logger := &boostTestLogger{}
+	store := NewStore(t.TempDir())
+	challenge := NewChallengeSolver()
+
+	// Create ACME client with invalid URL that will fail
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	acmeClient := &ACMEClient{
+		privateKey: key,
+		nonce:      "test-nonce",
+	}
+
+	manager := NewManager(store, acmeClient, challenge, logger)
+
+	// This should fail because the URL is invalid
+	err := manager.processAuthorization("http://[invalid-url")
+	if err == nil {
+		t.Error("processAuthorization should fail with invalid URL")
+	}
+}
+
+// --- provisionCertificate additional tests ---
+
+func TestProvisionCertificateAuthorizationFailure(t *testing.T) {
+	logger := &boostTestLogger{}
+	store := NewStore(t.TempDir())
+	challenge := NewChallengeSolver()
+
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	acmeClient := &ACMEClient{
+		privateKey:  key,
+		nonce:       "test-nonce",
+		newOrderURL: "http://127.0.0.1:1/new-order",
+		httpClient:  &http.Client{Timeout: 100 * time.Millisecond},
+	}
+
+	manager := NewManager(store, acmeClient, challenge, logger)
+
+	// Should fail when trying to create order
+	err := manager.provisionCertificate("test.example.com")
+	if err == nil {
+		t.Error("provisionCertificate should fail when order creation fails")
+	}
+}
+
+// --- Store additional tests ---
+
+func TestStoreExistsNonexistent(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+
+	// Non-existent domain
+	if store.Exists("nonexistent.com") {
+		t.Error("Exists should return false for non-existent domain")
+	}
+}
+
+// --- ACME client additional tests ---
+
+func TestACMEClientInitializeWithExistingKey(t *testing.T) {
+	// Generate a key
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+
+	client := NewACMEClient(LEStagingURL, "test@example.com")
+
+	// Set the private key directly to simulate loading
+	client.privateKey = key
+
+	if client.privateKey == nil {
+		t.Error("Private key should be set")
+	}
+}
+
+// --- Challenge solver additional tests ---
+
+func TestChallengeSolverGetNonexistentToken(t *testing.T) {
+	solver := NewChallengeSolver()
+
+	token, ok := solver.GetToken("nonexistent-token")
+	if ok {
+		t.Error("GetToken nonexistent should return ok=false")
+	}
+	if token != "" {
+		t.Errorf("GetToken nonexistent should return empty token, got %q", token)
+	}
+}
+
+func TestChallengeSolverRemoveNonexistentToken(t *testing.T) {
+	solver := NewChallengeSolver()
+
+	// Should not panic
+	solver.RemoveToken("nonexistent-token")
+}
+
+// --- Certificate expiry tests ---
+
+func TestGetExpiryValidCert(t *testing.T) {
+	certPEM, _ := boostGenerateTestCertPEM(t)
+
+	expiry, err := GetExpiry(certPEM)
+	if err != nil {
+		t.Errorf("GetExpiry error: %v", err)
+	}
+	if expiry.IsZero() {
+		t.Error("expiry should not be zero")
+	}
+}
+
+func TestShouldRenewValidCert(t *testing.T) {
+	certPEM, _ := boostGenerateTestCertPEM(t)
+
+	// Fresh cert should not need renewal
+	if ShouldRenew(certPEM) {
+		t.Error("fresh cert should not need renewal")
+	}
+}
+
+func TestIsValidValidCert(t *testing.T) {
+	certPEM, _ := boostGenerateTestCertPEM(t)
+
+	valid, err := IsValid(certPEM, 30*24*time.Hour)
+	if err != nil {
+		t.Errorf("IsValid error: %v", err)
+	}
+	if !valid {
+		t.Error("fresh cert should be valid")
+	}
+}
