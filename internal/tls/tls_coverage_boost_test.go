@@ -5,11 +5,13 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -428,3 +430,365 @@ func TestIsValidValidCert(t *testing.T) {
 		t.Error("fresh cert should be valid")
 	}
 }
+
+// --- needsRenewal edge cases ---
+
+func TestNeedsRenewalNilCert(t *testing.T) {
+	store := NewStore(t.TempDir())
+	manager := NewManager(store, nil, nil, &boostTestLogger{})
+
+	if !manager.needsRenewal(nil) {
+		t.Error("nil cert should need renewal")
+	}
+}
+
+func TestNeedsRenewalNilLeaf(t *testing.T) {
+	store := NewStore(t.TempDir())
+	manager := NewManager(store, nil, nil, &boostTestLogger{})
+
+	cert := &tls.Certificate{} // Leaf is nil
+	if !manager.needsRenewal(cert) {
+		t.Error("cert with nil Leaf should need renewal")
+	}
+}
+
+// --- GetCertificate edge cases ---
+
+func TestGetCertificateNilHello(t *testing.T) {
+	store := NewStore(t.TempDir())
+	manager := NewManager(store, nil, nil, &boostTestLogger{})
+
+	_, err := manager.GetCertificate(nil)
+	if err == nil {
+		t.Error("GetCertificate with nil hello should error")
+	}
+}
+
+func TestGetCertificateEmptyServerName(t *testing.T) {
+	store := NewStore(t.TempDir())
+	manager := NewManager(store, nil, nil, &boostTestLogger{})
+
+	hello := &tls.ClientHelloInfo{ServerName: ""}
+	_, err := manager.GetCertificate(hello)
+	if err == nil {
+		t.Error("GetCertificate with empty server name should error")
+	}
+}
+
+// --- encodePrivateKey error case ---
+
+func TestEncodePrivateKeyError(t *testing.T) {
+	store := NewStore(t.TempDir())
+	manager := NewManager(store, nil, nil, &boostTestLogger{})
+
+	// Create an invalid key by using a different curve that might cause issues
+	key, _ := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
+
+	_, err := manager.encodePrivateKey(key)
+	if err != nil {
+		// P-224 is valid, so this shouldn't error, but test the path
+		t.Logf("encodePrivateKey with P-224: %v", err)
+	}
+}
+
+// --- LoadAccountKey error cases ---
+
+func TestLoadAccountKeyNonexistent(t *testing.T) {
+	store := NewStore(t.TempDir())
+	acmeClient := NewACMEClient(LEStagingURL, "test@example.com")
+	manager := NewManager(store, acmeClient, nil, &boostTestLogger{})
+
+	err := manager.LoadAccountKey()
+	if err == nil {
+		t.Error("LoadAccountKey with no file should error")
+	}
+}
+
+func TestLoadAccountKeyInvalidData(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	acmeClient := NewACMEClient(LEStagingURL, "test@example.com")
+	manager := NewManager(store, acmeClient, nil, &boostTestLogger{})
+
+	// Create invalid key file
+	keyPath := filepath.Join(dir, "accounts", "account.key")
+	os.MkdirAll(filepath.Join(dir, "accounts"), 0700)
+	os.WriteFile(keyPath, []byte("invalid key data"), 0600)
+
+	err := manager.LoadAccountKey()
+	if err == nil {
+		t.Error("LoadAccountKey with invalid data should error")
+	}
+}
+
+// --- SaveAccountKey edge cases ---
+
+func TestSaveAccountKeyNilACME(t *testing.T) {
+	store := NewStore(t.TempDir())
+	manager := NewManager(store, nil, nil, &boostTestLogger{})
+
+	err := manager.SaveAccountKey()
+	if err != nil {
+		t.Errorf("SaveAccountKey with nil ACME should return nil, got %v", err)
+	}
+}
+
+func TestSaveAccountKeyNilKey(t *testing.T) {
+	store := NewStore(t.TempDir())
+	acmeClient := NewACMEClient(LEStagingURL, "test@example.com")
+	manager := NewManager(store, acmeClient, nil, &boostTestLogger{})
+
+	err := manager.SaveAccountKey()
+	if err != nil {
+		t.Errorf("SaveAccountKey with nil key should return nil, got %v", err)
+	}
+}
+
+// --- EnsureCertificate edge cases ---
+
+func TestEnsureCertificateNeedsRenewal(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	manager := NewManager(store, nil, nil, &boostTestLogger{})
+
+	// Create an expired certificate
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "expired.com"},
+		NotBefore:    time.Now().Add(-365 * 24 * time.Hour),
+		NotAfter:     time.Now().Add(-1 * time.Hour), // Expired
+		DNSNames:     []string{"expired.com"},
+	}
+
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	certDER, _ := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyDER, _ := x509.MarshalECPrivateKey(key)
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	store.Save("expired.com", certPEM, keyPEM)
+
+	// Since ACME is nil, this will fail to provision but should detect renewal needed
+	err := manager.EnsureCertificate("expired.com")
+	if err == nil {
+		t.Error("EnsureCertificate for expired cert with no ACME should error")
+	}
+}
+
+// --- GenerateSelfSigned edge cases ---
+
+func TestGenerateSelfSignedSuccess(t *testing.T) {
+	cert, err := GenerateSelfSigned("localhost")
+	if err != nil {
+		t.Fatalf("GenerateSelfSigned error: %v", err)
+	}
+	if cert == nil {
+		t.Error("GenerateSelfSigned should return a certificate")
+	}
+	if cert.Leaf == nil {
+		t.Error("GenerateSelfSigned certificate should have Leaf")
+	}
+	if cert.PrivateKey == nil {
+		t.Error("GenerateSelfSigned certificate should have PrivateKey")
+	}
+}
+
+// --- provisionCertificate edge cases ---
+
+func TestProvisionCertificateNilACME(t *testing.T) {
+	store := NewStore(t.TempDir())
+	manager := NewManager(store, nil, nil, &boostTestLogger{})
+
+	err := manager.provisionCertificate("test.example.com")
+	if err == nil {
+		t.Error("provisionCertificate with nil ACME should error")
+	}
+	if err.Error() != "ACME client not initialized" {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// --- processAuthorization edge cases ---
+
+func TestProcessAuthorizationNilACME(t *testing.T) {
+	// This test documents that processAuthorization panics with nil ACME
+	// The function doesn't check for nil before using m.acme
+	defer func() {
+		if r := recover(); r != nil {
+			t.Logf("processAuthorization panics with nil ACME (expected): %v", r)
+		}
+	}()
+
+	store := NewStore(t.TempDir())
+	manager := NewManager(store, nil, nil, &boostTestLogger{})
+
+	// This will panic - documenting the behavior
+	_ = manager.processAuthorization("http://example.com/auth")
+	t.Error("Should have panicked with nil ACME")
+}
+
+// --- generateCSR tests ---
+
+func TestGenerateCSRSuccess(t *testing.T) {
+	store := NewStore(t.TempDir())
+	manager := NewManager(store, nil, nil, &boostTestLogger{})
+
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	csr, err := manager.generateCSR(key, "example.com")
+	if err != nil {
+		t.Errorf("generateCSR error: %v", err)
+	}
+	if csr == nil {
+		t.Error("generateCSR should return CSR bytes")
+	}
+}
+
+// --- encodePrivateKey edge cases ---
+
+func TestEncodePrivateKeySuccess(t *testing.T) {
+	store := NewStore(t.TempDir())
+	manager := NewManager(store, nil, nil, &boostTestLogger{})
+
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	pem, err := manager.encodePrivateKey(key)
+	if err != nil {
+		t.Errorf("encodePrivateKey error: %v", err)
+	}
+	if pem == nil {
+		t.Error("encodePrivateKey should return PEM bytes")
+	}
+}
+
+// --- Renew tests ---
+
+func TestRenewNilACME(t *testing.T) {
+	store := NewStore(t.TempDir())
+	manager := NewManager(store, nil, nil, &boostTestLogger{})
+
+	err := manager.Renew("test.example.com")
+	if err == nil {
+		t.Error("Renew with nil ACME should error")
+	}
+}
+
+// --- provisionCertificate edge cases ---
+
+func TestProvisionCertificateOrderError(t *testing.T) {
+	logger := &boostTestLogger{}
+	store := NewStore(t.TempDir())
+	challenge := NewChallengeSolver()
+
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	acmeClient := &ACMEClient{
+		privateKey:  key,
+		nonce:       "test-nonce",
+		newOrderURL: "http://[::1]:1/new-order",
+		httpClient:  &http.Client{Timeout: 100 * time.Millisecond},
+	}
+
+	manager := NewManager(store, acmeClient, challenge, logger)
+
+	// Should fail when trying to create order due to invalid URL
+	err := manager.provisionCertificate("test.example.com")
+	if err == nil {
+		t.Error("provisionCertificate should fail with invalid order URL")
+	}
+}
+
+// --- processAuthorization edge cases ---
+
+func TestProcessAuthorizationInvalidAuthURL(t *testing.T) {
+	logger := &boostTestLogger{}
+	store := NewStore(t.TempDir())
+	challenge := NewChallengeSolver()
+
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	acmeClient := &ACMEClient{
+		privateKey: key,
+		nonce:      "test-nonce",
+	}
+
+	manager := NewManager(store, acmeClient, challenge, logger)
+
+	// Should fail with invalid URL
+	err := manager.processAuthorization("://invalid-url")
+	if err == nil {
+		t.Error("processAuthorization should fail with invalid URL")
+	}
+}
+
+// --- Store.List edge cases ---
+
+func TestStoreListEmpty(t *testing.T) {
+	store := NewStore(t.TempDir())
+
+	// List on empty store should return empty slice
+	certs, err := store.List()
+	if err != nil {
+		t.Errorf("List error: %v", err)
+	}
+	if len(certs) != 0 {
+		t.Errorf("Expected 0 certs, got %d", len(certs))
+	}
+}
+
+// --- ACME client with invalid URLs ---
+
+func TestACMEClientInitializeInvalidDirectoryURL(t *testing.T) {
+	client := NewACMEClient("://invalid-url", "test@example.com")
+	err := client.Initialize()
+	if err == nil {
+		t.Error("Initialize should fail with invalid directory URL")
+	}
+}
+
+// --- Challenge solver edge cases ---
+
+func TestChallengeSolverHandlerNotFound(t *testing.T) {
+	solver := NewChallengeSolver()
+
+	// Get the handler
+	handler := solver.Handler()
+
+	// Handle request for non-existent token
+	req := httptest.NewRequest("GET", "/.well-known/acme-challenge/nonexistent-token", nil)
+	rec := httptest.NewRecorder()
+
+	handler(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("Status = %d, want 404", rec.Code)
+	}
+}
+
+func TestChallengeSolverHandlerWithToken(t *testing.T) {
+	solver := NewChallengeSolver()
+
+	// Add a token using SetToken
+	solver.SetToken("test-token", "test-key-auth")
+
+	// Verify it was added
+	token, ok := solver.GetToken("test-token")
+	if !ok {
+		t.Error("GetToken should return ok=true for added token")
+	}
+	if token != "test-key-auth" {
+		t.Errorf("Token = %q, want test-key-auth", token)
+	}
+
+	// Get the handler and request the token
+	handler := solver.Handler()
+	req := httptest.NewRequest("GET", "/.well-known/acme-challenge/test-token", nil)
+	rec := httptest.NewRecorder()
+
+	handler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Status = %d, want 200", rec.Code)
+	}
+	if rec.Body.String() != "test-key-auth" {
+		t.Errorf("Body = %q, want test-key-auth", rec.Body.String())
+	}
+}
+

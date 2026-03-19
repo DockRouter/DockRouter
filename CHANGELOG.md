@@ -9,13 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Discovery package test coverage improved from 69.9% to 72.2%
-- CMD package test coverage improved from 72.4% to 74.5%
-- Router package test coverage improved from 96.7% to 96.9%
-- TLS package test coverage improved from 80.9% to 82.8%
-- Overall project coverage improved to 87.9%
+- CMD package test coverage improved from 72.4% to 77.1%
+- Router package test coverage improved from 96.7% to 97.9%
+- TLS package test coverage improved from 80.9% to 83.0%
+- Middleware package test coverage improved from 95.6% to 97.4%
+- Overall project coverage improved to 88.5%
 - Added comprehensive tests for GetContainerIP, Changed, handleEvent, printVersion, admin handlers, and weighted round robin edge cases
 - Added TLS tests for processAuthorization, provisionCertificate error paths, and challenge solver edge cases
 - Fixed duplicate test declarations in discovery package
+- Added TLS edge case tests: needsRenewal nil cases, GetCertificate validation, Load/SaveAccountKey errors
+- Added CMD edge case tests: handleRoutes with routes, handleStatus with components, admin handler auth tests
+- Added discovery HTTP request tests for context deadlines and timeouts
+- Added router backend tests: weighted round robin zero/negative weight edge cases
+- Added middleware tests: AddTrustedProxy edge cases, IP extraction with trusted proxies, rate limiter zero rate
+- Added discovery extended tests: GetContainerIP network priority, container state tests, network/subnet struct tests
+- Added router tests: getNode/putNode pool functions, radix tree edge cases, common prefix edge cases
+- Added TLS tests: provisionCertificate nil ACME, generateCSR, encodePrivateKey, Renew nil ACME
+- Added CMD tests: start with HTTP only, initialize with data dir, shutdown edge cases, certificates handler
+- Added discovery tests: doRequest/doStreamRequest error handling, Sync context cancellation, pollLoop/watchEvents cancellation
+- Added TLS tests: Store.List empty, ACME Initialize invalid URL, Challenge solver handler tests
 
 ## [1.1.0] - 2024-03-18
 

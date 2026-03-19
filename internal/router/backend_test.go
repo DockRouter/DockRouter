@@ -103,3 +103,60 @@ func TestBackendPoolRemove(t *testing.T) {
 		t.Error("Wrong target removed")
 	}
 }
+
+// --- Weighted Round Robin Edge Case Tests ---
+
+func TestBackendPoolWeightedRoundRobinZeroWeight(t *testing.T) {
+	pool := NewBackendPool(WeightedRoundRobin)
+
+	// Add targets with zero weight (should default to 1)
+	pool.Add(&BackendTarget{Address: "10.0.0.1:8080", Healthy: true, Weight: 0})
+	pool.Add(&BackendTarget{Address: "10.0.0.2:8080", Healthy: true, Weight: 0})
+
+	// Both should be selected roughly equally (default weight = 1)
+	counts := make(map[string]int)
+	for i := 0; i < 100; i++ {
+		selected := pool.Select("")
+		if selected == nil {
+			t.Fatal("Expected target, got nil")
+		}
+		counts[selected.Address]++
+	}
+
+	// Both should get roughly 50% each
+	if counts["10.0.0.1:8080"] < 30 || counts["10.0.0.1:8080"] > 70 {
+		t.Errorf("Expected ~50%% for each target, got %d%% and %d%%", counts["10.0.0.1:8080"], counts["10.0.0.2:8080"])
+	}
+}
+
+func TestBackendPoolWeightedRoundRobinNegativeWeight(t *testing.T) {
+	pool := NewBackendPool(WeightedRoundRobin)
+
+	// Add target with negative weight (should default to 1)
+	pool.Add(&BackendTarget{Address: "10.0.0.1:8080", Healthy: true, Weight: -5})
+
+	selected := pool.Select("")
+	if selected == nil {
+		t.Fatal("Expected target, got nil")
+	}
+	if selected.Address != "10.0.0.1:8080" {
+		t.Errorf("Expected 10.0.0.1:8080, got %s", selected.Address)
+	}
+}
+
+func TestBackendPoolWeightedRoundRobinSingleTarget(t *testing.T) {
+	pool := NewBackendPool(WeightedRoundRobin)
+
+	// Single target should always be selected
+	pool.Add(&BackendTarget{Address: "10.0.0.1:8080", Healthy: true, Weight: 5})
+
+	for i := 0; i < 10; i++ {
+		selected := pool.Select("")
+		if selected == nil {
+			t.Fatal("Expected target, got nil")
+		}
+		if selected.Address != "10.0.0.1:8080" {
+			t.Errorf("Expected 10.0.0.1:8080, got %s", selected.Address)
+		}
+	}
+}

@@ -31,6 +31,9 @@ var (
 	buildTime = "unknown"
 )
 
+// healthCheckURL is the URL for health checks (can be overridden in tests)
+var healthCheckURL = "http://localhost:9090/api/v1/health"
+
 // Embed dashboard files
 //
 //go:embed dashboard/*
@@ -640,22 +643,29 @@ func parseLogLevel(level string) log.Level {
 
 // doHealthCheck performs a health check for Docker HEALTHCHECK
 func doHealthCheck() {
-	// Check admin endpoint health
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get("http://localhost:9090/api/v1/health")
-	if err != nil {
+	if err := performHealthCheck(); err != nil {
 		fmt.Fprintf(os.Stderr, "Health check failed: %v\n", err)
 		os.Exit(1)
+	}
+	fmt.Println("healthy")
+	os.Exit(0)
+}
+
+// performHealthCheck performs the actual health check and returns an error if it fails
+// This is extracted for testability
+func performHealthCheck() error {
+	// Check admin endpoint health
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(healthCheckURL)
+	if err != nil {
+		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		fmt.Fprintf(os.Stderr, "Health check failed: status %d\n", resp.StatusCode)
-		os.Exit(1)
+		return fmt.Errorf("status %d", resp.StatusCode)
 	}
-
-	fmt.Println("healthy")
-	os.Exit(0)
+	return nil
 }
 
 // printVersion prints version information

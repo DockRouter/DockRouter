@@ -1157,3 +1157,165 @@ func TestSyncWithDisabledContainer(t *testing.T) {
 	ctx := context.Background()
 	_ = engine.Sync(ctx)
 }
+
+// --- doRequest error handling ---
+
+func TestDoRequestInvalidURL(t *testing.T) {
+	client := &DockerClient{socketPath: "/nonexistent/docker.sock"}
+
+	// Test with invalid method that causes URL parsing to fail
+	ctx := context.Background()
+	_, err := client.doRequest(ctx, "GET", "://invalid-url")
+	if err == nil {
+		t.Error("doRequest should fail with invalid URL")
+	}
+}
+
+func TestDoRequestContextCancelled(t *testing.T) {
+	client := &DockerClient{socketPath: "/nonexistent/docker.sock"}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	_, err := client.doRequest(ctx, "GET", "http://example.com/test")
+	if err == nil {
+		t.Error("doRequest should fail with cancelled context")
+	}
+}
+
+// --- doStreamRequest error handling ---
+
+func TestDoStreamRequestInvalidURL(t *testing.T) {
+	client := &DockerClient{socketPath: "/nonexistent/docker.sock"}
+
+	ctx := context.Background()
+	_, err := client.doStreamRequest(ctx, "GET", "://invalid-url")
+	if err == nil {
+		t.Error("doStreamRequest should fail with invalid URL")
+	}
+}
+
+func TestDoStreamRequestContextCancelled(t *testing.T) {
+	client := &DockerClient{socketPath: "/nonexistent/docker.sock"}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	_, err := client.doStreamRequest(ctx, "GET", "http://example.com/test")
+	if err == nil {
+		t.Error("doStreamRequest should fail with cancelled context")
+	}
+}
+
+// --- Sync context cancellation ---
+
+func TestSyncContextCancelled(t *testing.T) {
+	logger := &mockLogger{}
+	sink := newMockRouteSink()
+	client := &DockerClient{socketPath: "/nonexistent/docker.sock"}
+
+	engine := NewEngine(client, sink, logger)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	err := engine.Sync(ctx)
+	if err == nil {
+		t.Error("Sync should fail with cancelled context")
+	}
+}
+
+// --- pollLoop context cancellation ---
+
+func TestPollLoopContextCancelled(t *testing.T) {
+	logger := &mockLogger{}
+	sink := newMockRouteSink()
+	client := &DockerClient{socketPath: "/nonexistent/docker.sock"}
+
+	engine := NewEngine(client, sink, logger)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	// Should exit quickly due to cancelled context
+	engine.pollLoop(ctx)
+}
+
+// --- watchEvents context cancellation ---
+
+func TestWatchEventsContextCancelled(t *testing.T) {
+	logger := &mockLogger{}
+	sink := newMockRouteSink()
+	client := &DockerClient{socketPath: "/nonexistent/docker.sock"}
+
+	engine := NewEngine(client, sink, logger)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	// Should exit quickly due to cancelled context
+	engine.watchEvents(ctx)
+}
+
+// --- handleEvent panic recovery ---
+
+func TestHandleEventPanicRecovery(t *testing.T) {
+	logger := &mockLogger{}
+	sink := newMockRouteSink()
+	client := &DockerClient{socketPath: "/nonexistent/docker.sock"}
+
+	engine := NewEngine(client, sink, logger)
+
+	// Create an event with valid-length ID that exercises error path
+	event := Event{
+		Type:   "container",
+		Action: "start",
+		Actor: EventActor{
+			ID: "abc123def4567890123456789012345678901234567890123456789012345678",
+			Attributes: map[string]string{
+				"name": "test-app",
+			},
+		},
+	}
+
+	// This should handle errors gracefully without panic
+	ctx := context.Background()
+	engine.handleEvent(ctx, event)
+}
+
+// --- ListNetworks edge cases ---
+
+func TestListNetworksError(t *testing.T) {
+	client := &DockerClient{socketPath: "/nonexistent/docker.sock"}
+
+	ctx := context.Background()
+	_, err := client.ListNetworks(ctx)
+	if err == nil {
+		t.Error("ListNetworks should fail with invalid socket")
+	}
+}
+
+// --- EventsStream edge cases ---
+
+func TestEventsStreamError(t *testing.T) {
+	client := &DockerClient{socketPath: "/nonexistent/docker.sock"}
+
+	ctx := context.Background()
+	filters := map[string]string{"type": "container"}
+	_, err := client.EventsStream(ctx, filters)
+	if err == nil {
+		t.Error("EventsStream should fail with invalid socket")
+	}
+}
+
+// --- InspectContainer edge cases ---
+
+func TestInspectContainerError(t *testing.T) {
+	client := &DockerClient{socketPath: "/nonexistent/docker.sock"}
+
+	ctx := context.Background()
+	_, err := client.InspectContainer(ctx, "container-id")
+	if err == nil {
+		t.Error("InspectContainer should fail with invalid socket")
+	}
+}
