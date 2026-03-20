@@ -67,11 +67,20 @@ func (c *Checker) Start(ctx context.Context) {
 }
 
 func (c *Checker) checkAll() {
+	// Collect targets under read lock, then run checks without holding the lock
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-
+	type checkTarget struct {
+		target string
+		check  *HealthCheck
+	}
+	targets := make([]checkTarget, 0, len(c.checks))
 	for target, check := range c.checks {
-		go c.checkOne(target, check)
+		targets = append(targets, checkTarget{target, check})
+	}
+	c.mu.RUnlock()
+
+	for _, t := range targets {
+		go c.checkOne(t.target, t.check)
 	}
 }
 

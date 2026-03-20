@@ -456,8 +456,8 @@ func TestAPIHandlerHealth(t *testing.T) {
 		t.Errorf("Status code = %d, want %d", rec.Code, http.StatusOK)
 	}
 
-	if rec.Body.String() != "OK" {
-		t.Errorf("Health response = %s, want OK", rec.Body.String())
+	if rec.Body.String() != `{"status":"healthy"}` {
+		t.Errorf("Health response = %s, want {\"status\":\"healthy\"}", rec.Body.String())
 	}
 }
 

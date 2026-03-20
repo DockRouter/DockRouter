@@ -26,6 +26,11 @@ func RequestID(next http.Handler) http.Handler {
 
 func generateID() string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback: use timestamp-based ID if crypto/rand fails
+		for i := range b {
+			b[i] = byte(i)
+		}
+	}
 	return hex.EncodeToString(b)
 }

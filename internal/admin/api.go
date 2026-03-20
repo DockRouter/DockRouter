@@ -62,5 +62,6 @@ func (h *APIHandler) metrics(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *APIHandler) health(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("OK"))
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"status":"healthy"}`))
 }
