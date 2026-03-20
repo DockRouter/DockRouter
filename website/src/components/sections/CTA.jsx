@@ -7,12 +7,18 @@ export function CTA() {
 
   return (
     <section className="py-24 relative overflow-hidden">
-      {/* Gradient Background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-dock-blue/10 via-[#7C3AED]/10 to-signal-orange/10" />
-      <div className="absolute inset-0 dot-pattern opacity-20" />
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-dock-blue/10 rounded-full blur-[150px]" />
+      {/* Background */}
+      <div className="absolute inset-0 bg-gradient-to-br from-dock-blue/5 via-[#7C3AED]/5 to-signal-orange/5" />
+      <div className="hero-grid" style={{ opacity: 0.4 }} />
+      <div className="cta-glow" />
 
-      <div ref={ref} className={`relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center reveal ${isVisible ? 'visible' : ''}`}>
+      {/* Floating accent dots */}
+      <div className="absolute top-20 left-[15%] w-2 h-2 rounded-full bg-dock-blue/30 animate-float" />
+      <div className="absolute top-40 right-[20%] w-1.5 h-1.5 rounded-full bg-signal-orange/30 animate-float-slow" />
+      <div className="absolute bottom-20 left-[30%] w-2.5 h-2.5 rounded-full bg-[#7C3AED]/20 animate-float-reverse" />
+      <div className="absolute bottom-32 right-[25%] w-1.5 h-1.5 rounded-full bg-dock-blue/20 animate-float" style={{ animationDelay: '2s' }} />
+
+      <div ref={ref} className={`relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center z-10 reveal ${isVisible ? 'visible' : ''}`}>
         <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-[var(--text-primary)] mb-6">
           Ready to Simplify
           <br />

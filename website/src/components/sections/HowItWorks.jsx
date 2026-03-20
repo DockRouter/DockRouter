@@ -32,7 +32,7 @@ export function HowItWorks() {
   const [ref, isVisible] = useIntersection({ threshold: 0.1 })
 
   return (
-    <section id="how-it-works" className="py-24 bg-[var(--bg-secondary)]/50">
+    <section id="how-it-works" className="py-24 section-alt">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="text-center max-w-3xl mx-auto mb-16">

@@ -2,19 +2,44 @@ import { ArrowRight, Github, Zap, Lock, Package } from 'lucide-react'
 import { Button } from '../ui/button'
 import { Badge } from '../ui/badge'
 
+function AnimatedGrid() {
+  return (
+    <div className="hero-grid">
+      {/* Horizontal animated beams */}
+      <div className="grid-beam" style={{ top: '20%', left: '0%', animation: 'grid-line-h 6s ease-in-out infinite' }} />
+      <div className="grid-beam" style={{ top: '50%', left: '0%', animation: 'grid-line-h 8s ease-in-out infinite', animationDelay: '2s' }} />
+      <div className="grid-beam" style={{ top: '75%', left: '0%', animation: 'grid-line-h 7s ease-in-out infinite', animationDelay: '4s' }} />
+      {/* Vertical animated beams */}
+      <div className="grid-beam-v" style={{ left: '25%', top: '0%', animation: 'grid-line-v 9s ease-in-out infinite', animationDelay: '1s' }} />
+      <div className="grid-beam-v" style={{ left: '60%', top: '0%', animation: 'grid-line-v 7s ease-in-out infinite', animationDelay: '3s' }} />
+      <div className="grid-beam-v" style={{ left: '85%', top: '0%', animation: 'grid-line-v 8s ease-in-out infinite', animationDelay: '5s' }} />
+    </div>
+  )
+}
+
+function FloatingOrbs() {
+  return (
+    <>
+      <div className="orb orb-1" />
+      <div className="orb orb-2" />
+      <div className="orb orb-3" />
+      <div className="spotlight" />
+    </>
+  )
+}
+
 export function Hero() {
   return (
     <section className="relative min-h-screen flex items-center justify-center pt-16 overflow-hidden">
-      {/* Background Effects */}
-      <div className="absolute inset-0 dot-pattern opacity-50" />
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[600px] bg-dock-blue/5 rounded-full blur-[120px]" />
-      <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-signal-orange/5 rounded-full blur-[100px]" />
+      {/* Animated Background */}
+      <AnimatedGrid />
+      <FloatingOrbs />
 
-      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 z-10">
         <div className="text-center max-w-4xl mx-auto">
           {/* Top Badge */}
           <div className="flex justify-center mb-8 animate-fade-in">
-            <Badge variant="outline" className="px-4 py-1.5 text-sm gap-2">
+            <Badge variant="outline" className="px-4 py-1.5 text-sm gap-2 shadow-sm">
               <span className="w-2 h-2 rounded-full bg-healthy animate-pulse" />
               v1.0 — Production Ready
             </Badge>
@@ -22,7 +47,7 @@ export function Hero() {
 
           {/* Headline */}
           <h1 className="text-5xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.1] mb-6 animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
-            Stop Configuring.
+            <span className="text-[var(--text-primary)]">Stop Configuring.</span>
             <br />
             <span className="gradient-text">Start Shipping.</span>
           </h1>
@@ -51,15 +76,15 @@ export function Hero() {
 
           {/* Feature Pills */}
           <div className="flex flex-wrap items-center justify-center gap-3 mb-16 animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
-            <Badge variant="secondary" className="gap-2 py-1.5">
+            <Badge variant="secondary" className="gap-2 py-1.5 shadow-sm">
               <Zap className="w-3.5 h-3.5 text-signal-orange" />
               Zero Dependencies
             </Badge>
-            <Badge variant="secondary" className="gap-2 py-1.5">
+            <Badge variant="secondary" className="gap-2 py-1.5 shadow-sm">
               <Package className="w-3.5 h-3.5 text-dock-blue" />
               {'<10MB Binary'}
             </Badge>
-            <Badge variant="secondary" className="gap-2 py-1.5">
+            <Badge variant="secondary" className="gap-2 py-1.5 shadow-sm">
               <Lock className="w-3.5 h-3.5 text-healthy" />
               Auto TLS
             </Badge>

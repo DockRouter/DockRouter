@@ -7,7 +7,7 @@ export function Comparison() {
   const [ref, isVisible] = useIntersection({ threshold: 0.1 })
 
   return (
-    <section id="compare" className="py-24 bg-[var(--bg-secondary)]/50">
+    <section id="compare" className="py-24 section-alt">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-[var(--text-primary)] mb-4">
