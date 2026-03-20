@@ -493,15 +493,24 @@ func TestACMEClientInitialize(t *testing.T) {
 
 func TestACMEClientSignedGet(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("User-Agent") != "DockRouter/1.0" {
-			t.Error("Missing User-Agent header")
+		// signedGet now uses POST-as-GET (RFC 8555)
+		if r.Method != "POST" {
+			t.Errorf("Method = %s, want POST (POST-as-GET)", r.Method)
 		}
+		if r.Header.Get("Content-Type") != "application/jose+json" {
+			t.Errorf("Content-Type = %s, want application/jose+json", r.Header.Get("Content-Type"))
+		}
+		w.Header().Set("Replay-Nonce", "new-nonce")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status": "ok"}`))
 	}))
 	defer server.Close()
 
+	privKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	client := NewACMEClient(LEStagingURL, "test@example.com")
+	client.privateKey = privKey
+	client.nonce = "initial-nonce"
+
 	resp, err := client.signedGet(server.URL)
 	if err != nil {
 		t.Fatalf("signedGet failed: %v", err)

@@ -7,7 +7,7 @@ import "net/http"
 func RedirectHTTPS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Skip if already HTTPS
-		if r.URL.Scheme == "https" || r.Header.Get("X-Forwarded-Proto") == "https" {
+		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 			next.ServeHTTP(w, r)
 			return
 		}

@@ -287,7 +287,7 @@ func TestHandleContainersNilDiscovery(t *testing.T) {
 	rec := httptest.NewRecorder()
 	app.handleContainers(rec, req)
 
-	if rec.Body.String() != "[]" {
+	if strings.TrimSpace(rec.Body.String()) != "[]" {
 		t.Errorf("body = %s, want []", rec.Body.String())
 	}
 }
@@ -312,7 +312,7 @@ func TestHandleContainersWithDiscoveryEngine(t *testing.T) {
 
 	// Should return an empty array since no containers discovered
 	body := rec.Body.String()
-	if body != "[]" {
+	if strings.TrimSpace(body) != "[]" {
 		t.Errorf("body should be empty array: %s", body)
 	}
 }
@@ -332,7 +332,7 @@ func TestHandleRoutesEmpty(t *testing.T) {
 	rec := httptest.NewRecorder()
 	app.handleRoutes(rec, req)
 
-	if rec.Body.String() != "[]" {
+	if strings.TrimSpace(rec.Body.String()) != "[]" {
 		t.Errorf("body = %s, want []", rec.Body.String())
 	}
 }
@@ -612,7 +612,7 @@ func TestHandleCertificatesNilManager(t *testing.T) {
 	rec := httptest.NewRecorder()
 	app.handleCertificates(rec, req)
 
-	if rec.Body.String() != "[]" {
+	if strings.TrimSpace(rec.Body.String()) != "[]" {
 		t.Errorf("body = %s, want []", rec.Body.String())
 	}
 }
@@ -1002,7 +1002,7 @@ func TestHandleContainersListNotNil(t *testing.T) {
 
 	// Should return empty JSON array
 	body := rec.Body.String()
-	if body != "[]" {
+	if strings.TrimSpace(body) != "[]" {
 		t.Errorf("body = %s, want []", body)
 	}
 }
@@ -1027,7 +1027,7 @@ func TestHandleCertificatesWithManager(t *testing.T) {
 	}
 
 	body := rec.Body.String()
-	if body != "[]" {
+	if strings.TrimSpace(body) != "[]" {
 		t.Errorf("body = %s, want []", body)
 	}
 }

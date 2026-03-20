@@ -39,7 +39,7 @@ func (l Level) String() string {
 
 // Logger provides structured logging
 type Logger struct {
-	mu     sync.Mutex
+	mu     *sync.Mutex
 	w      io.Writer
 	level  Level
 	fields map[string]interface{}
@@ -51,6 +51,7 @@ func NewLogger(w io.Writer, level Level) *Logger {
 		w = os.Stdout
 	}
 	return &Logger{
+		mu:     &sync.Mutex{},
 		w:      w,
 		level:  level,
 		fields: make(map[string]interface{}),
@@ -62,7 +63,19 @@ type logEntry struct {
 	Timestamp string                 `json:"ts"`
 	Level     string                 `json:"level"`
 	Message   string                 `json:"msg"`
-	Fields    map[string]interface{} `json:",inline"`
+	Fields    map[string]interface{} `json:"-"`
+}
+
+// MarshalJSON flattens Fields into the top-level JSON object
+func (e logEntry) MarshalJSON() ([]byte, error) {
+	m := make(map[string]interface{}, 3+len(e.Fields))
+	m["ts"] = e.Timestamp
+	m["level"] = e.Level
+	m["msg"] = e.Message
+	for k, v := range e.Fields {
+		m[k] = v
+	}
+	return json.Marshal(m)
 }
 
 // log writes a log entry
@@ -152,6 +165,7 @@ func (l *Logger) With(fields ...interface{}) *Logger {
 	}
 
 	return &Logger{
+		mu:     l.mu,
 		w:      l.w,
 		level:  l.level,
 		fields: newFields,

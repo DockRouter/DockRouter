@@ -47,7 +47,7 @@ func (cb *CircuitBreaker) Middleware() Middleware {
 			}
 
 			// Wrap response writer to track status
-			wrapped := &responseWriterTracker{ResponseWriter: w}
+			wrapped := &responseWriterTracker{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(wrapped, r)
 
 			// Record result

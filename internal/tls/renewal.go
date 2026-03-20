@@ -13,6 +13,7 @@ type RenewalScheduler struct {
 	interval time.Duration
 	logger   Logger
 	wg       sync.WaitGroup
+	cancel   context.CancelFunc
 }
 
 // Logger interface for TLS package
@@ -32,8 +33,12 @@ func NewRenewalScheduler(manager *Manager, logger Logger) *RenewalScheduler {
 	}
 }
 
-// Start begins the renewal check loop
+// Start begins the renewal check loop. It is not safe to call Start more than once.
 func (s *RenewalScheduler) Start(ctx context.Context) {
+	if s.cancel != nil {
+		return // already started
+	}
+	ctx, s.cancel = context.WithCancel(ctx)
 	s.wg.Add(1)
 	go s.run(ctx)
 }
@@ -93,7 +98,10 @@ func (s *RenewalScheduler) checkRenewals() {
 	}
 }
 
-// Stop stops the scheduler
+// Stop stops the scheduler and waits for it to finish
 func (s *RenewalScheduler) Stop() {
+	if s.cancel != nil {
+		s.cancel()
+	}
 	s.wg.Wait()
 }

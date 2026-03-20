@@ -92,12 +92,9 @@ func TestLoggerWithFields(t *testing.T) {
 		t.Errorf("Output should be valid JSON: %v", err)
 	}
 
-	fields, ok := entry["Fields"].(map[string]interface{})
-	if !ok {
-		t.Error("Should contain Fields map")
-	}
-	if fields["request_id"] != "123" {
-		t.Error("Should contain request_id in Fields")
+	// With MarshalJSON, fields are inlined into top-level JSON
+	if entry["request_id"] != "123" {
+		t.Error("Should contain request_id as top-level field")
 	}
 }
 
@@ -180,14 +177,11 @@ func TestLoggerWithChained(t *testing.T) {
 		t.Errorf("Output should be valid JSON: %v", err)
 	}
 
-	fields, ok := entry["Fields"].(map[string]interface{})
-	if !ok {
-		t.Fatal("Should contain Fields map")
-	}
-	if fields["key1"] != "value1" {
+	// With MarshalJSON, fields are inlined into top-level JSON
+	if entry["key1"] != "value1" {
 		t.Error("Should contain key1")
 	}
-	if fields["key2"] != "value2" {
+	if entry["key2"] != "value2" {
 		t.Error("Should contain key2")
 	}
 }
@@ -241,9 +235,9 @@ func TestLoggerWithNonStringKey(t *testing.T) {
 		t.Errorf("Output should be valid JSON: %v", err)
 	}
 
-	fields := entry["Fields"].(map[string]interface{})
+	// With MarshalJSON, fields are inlined into top-level JSON
 	// Non-string key should be skipped, but valid key should be present
-	if fields["valid_key"] != "valid_value" {
+	if entry["valid_key"] != "valid_value" {
 		t.Error("Should contain valid_key")
 	}
 }
@@ -262,10 +256,10 @@ func TestLoggerWithErrorValue(t *testing.T) {
 		t.Errorf("Output should be valid JSON: %v", err)
 	}
 
-	fields := entry["Fields"].(map[string]interface{})
+	// With MarshalJSON, fields are inlined into top-level JSON
 	// Error should be stored as its string representation
-	if fields["error_field"] != "test error message" {
-		t.Errorf("error_field = %v, want 'test error message'", fields["error_field"])
+	if entry["error_field"] != "test error message" {
+		t.Errorf("error_field = %v, want 'test error message'", entry["error_field"])
 	}
 }
 

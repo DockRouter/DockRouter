@@ -19,7 +19,7 @@ func AccessLog(next http.Handler) http.Handler {
 		start := time.Now()
 
 		// Wrap ResponseWriter to capture status
-		wrapped := &responseWriter{ResponseWriter: w}
+		wrapped := newResponseWriter(w)
 
 		next.ServeHTTP(wrapped, r)
 
@@ -82,6 +82,10 @@ func (w *accessLogResponseWriter) Write(b []byte) (int, error) {
 type responseWriter struct {
 	http.ResponseWriter
 	status int
+}
+
+func newResponseWriter(w http.ResponseWriter) *responseWriter {
+	return &responseWriter{ResponseWriter: w, status: http.StatusOK}
 }
 
 func (w *responseWriter) WriteHeader(status int) {

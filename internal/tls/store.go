@@ -60,6 +60,9 @@ func (s *Store) Save(domain string, certPEM, keyPEM []byte) error {
 
 // SaveMeta saves certificate metadata
 func (s *Store) SaveMeta(domain string, meta *CertMeta) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	dir := filepath.Join(s.dataDir, "certificates", domain)
 	metaBytes, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
@@ -103,6 +106,9 @@ func (s *Store) LoadPEM(domain string) (certPEM, keyPEM []byte, err error) {
 
 // LoadMeta loads certificate metadata
 func (s *Store) LoadMeta(domain string) (*CertMeta, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	dir := filepath.Join(s.dataDir, "certificates", domain)
 	data, err := os.ReadFile(filepath.Join(dir, "meta.json"))
 	if err != nil {
@@ -117,6 +123,9 @@ func (s *Store) LoadMeta(domain string) (*CertMeta, error) {
 
 // Exists checks if a certificate exists
 func (s *Store) Exists(domain string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	dir := filepath.Join(s.dataDir, "certificates", domain)
 	_, err := os.Stat(filepath.Join(dir, "cert.pem"))
 	return err == nil

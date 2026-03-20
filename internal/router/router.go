@@ -2,6 +2,7 @@
 package router
 
 import (
+	"html"
 	"net/http"
 	"strings"
 )
@@ -100,25 +101,22 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 func (r *Router) createProxyHandler(route *Route, host, path string, maxRetries int) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		// Try backends with retry logic
-		var lastErr error
 		triedBackends := make(map[string]bool)
 
 		for attempt := 0; attempt < maxRetries; attempt++ {
 			// Get backend from pool
 			backend := route.Backend.Select(req.RemoteAddr)
 			if backend == nil {
-				// No more healthy backends - all were marked unhealthy during retries
 				break
 			}
 
 			// Skip if already tried
 			if triedBackends[backend.Address] {
-				// All healthy backends tried, no more options
 				break
 			}
 			triedBackends[backend.Address] = true
 
-			// Record request
+			// Record request (increments active connections)
 			route.Backend.RecordRequest(backend.Address)
 
 			// Log the match
@@ -132,37 +130,33 @@ func (r *Router) createProxyHandler(route *Route, host, path string, maxRetries 
 
 			// Proxy the request
 			err := r.proxy.ServeHTTP(w, req, backend.Address)
+
+			// Decrement active connections
+			route.Backend.CompleteRequest(backend.Address)
+
 			if err == nil {
-				// Success
 				return
 			}
 
-			// Record failure and try next backend
-			lastErr = err
-			r.logger.Warn("Proxy error, trying next backend",
+			// Record failure
+			r.logger.Warn("Proxy error",
 				"error", err,
 				"backend", backend.Address,
 				"path", path,
 				"attempt", attempt+1,
 			)
 			route.Backend.RecordFailure(backend.Address)
-
-			// Mark this backend as unhealthy temporarily for retry
 			route.Backend.MarkUnhealthy(backend.Address)
+
+			// The proxy's error handler already wrote the error response
+			// to the ResponseWriter, so we cannot retry with the same writer.
+			// Log the failure and return -- the client already received
+			// the error page from the first failed attempt.
+			return
 		}
 
-		// All retries exhausted
-		if lastErr != nil {
-			r.logger.Error("All backends failed",
-				"error", lastErr,
-				"path", path,
-				"attempts", maxRetries,
-			)
-			http.Error(w, "Bad Gateway", http.StatusBadGateway)
-		} else {
-			// No backends were tried (shouldn't happen if HealthyCount > 0)
-			r.handleNoBackend(w, req, route)
-		}
+		// No backends were available to try
+		r.handleNoBackend(w, req, route)
 	})
 }
 
@@ -206,12 +200,16 @@ func (r *Router) CleanupRoute(routeID string) {
 
 // buildErrorPage generates a branded error page
 func buildErrorPage(code int, title, message, requestID string) string {
+	safeTitle := html.EscapeString(title)
+	safeMessage := html.EscapeString(message)
+	safeRequestID := html.EscapeString(requestID)
+
 	return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>` + intToStr(code) + ` ` + title + `</title>
+    <title>` + intToStr(code) + ` ` + safeTitle + `</title>
     <style>
         body { background: #0F172A; color: #F1F5F9; font-family: system-ui; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
         .container { text-align: center; }
@@ -223,11 +221,11 @@ func buildErrorPage(code int, title, message, requestID string) string {
 <body>
     <div class="container">
         <div class="code">` + intToStr(code) + `</div>
-        <div class="message">` + title + `</div>
-        <div class="message">` + message + `</div>
+        <div class="message">` + safeTitle + `</div>
+        <div class="message">` + safeMessage + `</div>
         ` + func() string {
-		if requestID != "" {
-			return `<div class="request-id">Request ID: ` + requestID + `</div>`
+		if safeRequestID != "" {
+			return `<div class="request-id">Request ID: ` + safeRequestID + `</div>`
 		}
 		return ""
 	}() + `
@@ -240,10 +238,18 @@ func intToStr(n int) string {
 	if n == 0 {
 		return "0"
 	}
+	neg := false
+	if n < 0 {
+		neg = true
+		n = -n
+	}
 	var s []byte
 	for n > 0 {
 		s = append([]byte{byte('0' + n%10)}, s...)
 		n /= 10
+	}
+	if neg {
+		s = append([]byte{'-'}, s...)
 	}
 	return string(s)
 }

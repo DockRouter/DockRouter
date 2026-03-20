@@ -50,16 +50,16 @@ func TestBackendPoolSelectIPHashNoIP(t *testing.T) {
 
 func TestBackendPoolSelectLeastConn(t *testing.T) {
 	pool := NewBackendPool(LeastConn)
-	pool.Add(&BackendTarget{Address: "10.0.0.1:8080", Healthy: true, requests: 10})
-	pool.Add(&BackendTarget{Address: "10.0.0.2:8080", Healthy: true, requests: 5})
-	pool.Add(&BackendTarget{Address: "10.0.0.3:8080", Healthy: true, requests: 20})
+	pool.Add(&BackendTarget{Address: "10.0.0.1:8080", Healthy: true, activeConns: 10})
+	pool.Add(&BackendTarget{Address: "10.0.0.2:8080", Healthy: true, activeConns: 5})
+	pool.Add(&BackendTarget{Address: "10.0.0.3:8080", Healthy: true, activeConns: 20})
 
 	selected := pool.Select("")
 	if selected == nil {
 		t.Fatal("Select should not return nil")
 	}
 	if selected.Address != "10.0.0.2:8080" {
-		t.Errorf("LeastConn should select backend with least requests, got %s", selected.Address)
+		t.Errorf("LeastConn should select backend with least active connections, got %s", selected.Address)
 	}
 }
 

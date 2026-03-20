@@ -14,6 +14,7 @@ type SSEHub struct {
 	broadcast  chan Event
 	register   chan *sseClient
 	unregister chan *sseClient
+	done       chan struct{}
 }
 
 type sseClient struct {
@@ -34,13 +35,16 @@ func NewSSEHub() *SSEHub {
 		broadcast:  make(chan Event, 100),
 		register:   make(chan *sseClient),
 		unregister: make(chan *sseClient),
+		done:       make(chan struct{}),
 	}
 }
 
-// Run starts the SSE hub
+// Run starts the SSE hub. It blocks until Stop is called.
 func (h *SSEHub) Run() {
 	for {
 		select {
+		case <-h.done:
+			return
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client] = struct{}{}
@@ -48,9 +52,11 @@ func (h *SSEHub) Run() {
 
 		case client := <-h.unregister:
 			h.mu.Lock()
-			delete(h.clients, client)
+			if _, ok := h.clients[client]; ok {
+				delete(h.clients, client)
+				close(client.ch)
+			}
 			h.mu.Unlock()
-			close(client.ch)
 
 		case event := <-h.broadcast:
 			h.mu.RLock()
@@ -66,14 +72,37 @@ func (h *SSEHub) Run() {
 	}
 }
 
+// Stop shuts down the SSE hub and closes all client channels
+func (h *SSEHub) Stop() {
+	close(h.done)
+
+	// Close all client channels so handler goroutines can exit
+	h.mu.Lock()
+	for client := range h.clients {
+		close(client.ch)
+		delete(h.clients, client)
+	}
+	h.mu.Unlock()
+}
+
 // Send broadcasts an event to all clients
 func (h *SSEHub) Send(event Event) {
-	h.broadcast <- event
+	select {
+	case h.broadcast <- event:
+	default:
+		// Broadcast channel full, drop event
+	}
 }
 
 // Handler returns an HTTP handler for SSE connections
 func (h *SSEHub) Handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "SSE not supported", http.StatusInternalServerError)
+			return
+		}
+
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
@@ -86,17 +115,15 @@ func (h *SSEHub) Handler() http.HandlerFunc {
 		h.register <- client
 		defer func() { h.unregister <- client }()
 
-		flusher, ok := w.(http.Flusher)
-		if !ok {
-			http.Error(w, "SSE not supported", http.StatusInternalServerError)
-			return
-		}
-
 		for {
 			select {
 			case <-r.Context().Done():
 				return
-			case event := <-client.ch:
+			case event, ok := <-client.ch:
+				if !ok {
+					// Channel closed, client was unregistered
+					return
+				}
 				// Write SSE format with JSON encoded event
 				w.Write([]byte("data: "))
 				data, err := json.Marshal(event)

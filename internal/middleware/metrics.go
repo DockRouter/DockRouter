@@ -11,6 +11,8 @@ type MetricsCollector interface {
 	IncCounter(name string)
 	ObserveHistogram(name string, value float64)
 	SetGauge(name string, value float64)
+	IncGauge(name string)
+	DecGauge(name string)
 }
 
 // Metrics records HTTP request metrics
@@ -24,14 +26,14 @@ func Metrics(collector MetricsCollector) Middleware {
 
 			// Increment active requests
 			collector.IncCounter("http_requests_total")
-			collector.SetGauge("http_requests_active", 1)
+			collector.IncGauge("http_requests_active")
 
 			next.ServeHTTP(wrapped, r)
 
 			// Record metrics
 			duration := time.Since(start).Seconds()
 			collector.ObserveHistogram("http_request_duration_seconds", duration)
-			collector.SetGauge("http_requests_active", 0)
+			collector.DecGauge("http_requests_active")
 
 			// Record status code
 			if wrapped.status >= 400 {

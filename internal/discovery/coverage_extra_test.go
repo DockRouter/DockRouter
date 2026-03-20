@@ -776,7 +776,7 @@ func TestEventStreamIsHealthEvent(t *testing.T) {
 		expected bool
 	}{
 		{Event{Type: "container", Action: "health_status"}, true},
-		{Event{Type: "container", Action: "health_status: healthy"}, false}, // exact match needed
+		{Event{Type: "container", Action: "health_status: healthy"}, true}, // prefix match
 		{Event{Type: "container", Action: "exec_create"}, false},
 		{Event{Type: "container", Action: ""}, false},
 		{Event{Type: "", Action: "health_status"}, false}, // wrong type

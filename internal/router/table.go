@@ -200,10 +200,16 @@ func (t *Table) removeFromTrees(route *Route) {
 	if strings.HasPrefix(host, "*.") {
 		if tree, ok := t.wildcard[host]; ok {
 			tree.Delete(path)
+			if tree.IsEmpty() {
+				delete(t.wildcard, host)
+			}
 		}
 	} else {
 		if tree, ok := t.exact[host]; ok {
 			tree.Delete(path)
+			if tree.IsEmpty() {
+				delete(t.exact, host)
+			}
 		}
 	}
 }

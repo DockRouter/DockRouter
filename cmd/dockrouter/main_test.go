@@ -176,7 +176,7 @@ func TestAppHandleContainers(t *testing.T) {
 			t.Errorf("Status = %d, want %d", w.Code, http.StatusOK)
 		}
 
-		if w.Body.String() != "[]" {
+		if strings.TrimSpace(w.Body.String()) != "[]" {
 			t.Errorf("Body = %s, want []", w.Body.String())
 		}
 	})
@@ -203,7 +203,7 @@ func TestAppHandleCertificates(t *testing.T) {
 			t.Errorf("Status = %d, want %d", w.Code, http.StatusOK)
 		}
 
-		if w.Body.String() != "[]" {
+		if strings.TrimSpace(w.Body.String()) != "[]" {
 			t.Errorf("Body = %s, want []", w.Body.String())
 		}
 	})
@@ -1108,7 +1108,7 @@ func TestAppHandleContainersWithActualData(t *testing.T) {
 
 	// nil discovery engine should return empty array
 	body := w.Body.String()
-	if body != "[]" {
+	if strings.TrimSpace(body) != "[]" {
 		t.Errorf("Body = %s, want []", body)
 	}
 }
@@ -1497,7 +1497,7 @@ func TestAppHandleContainersWithEngine(t *testing.T) {
 	}
 
 	// Should return empty array since no containers
-	if w.Body.String() != "[]" {
+	if strings.TrimSpace(w.Body.String()) != "[]" {
 		t.Errorf("Body = %s, want []", w.Body.String())
 	}
 }
@@ -1558,7 +1558,7 @@ func TestAppHandleContainersNilEngine(t *testing.T) {
 	}
 
 	// Should return empty array when discoveryEngine is nil
-	if w.Body.String() != "[]" {
+	if strings.TrimSpace(w.Body.String()) != "[]" {
 		t.Errorf("Body = %s, want []", w.Body.String())
 	}
 }

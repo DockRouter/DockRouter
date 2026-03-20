@@ -33,6 +33,9 @@ func CORS(config CORSConfig) Middleware {
 				}
 			}
 
+			// Always set Vary: Origin for proper cache behavior
+			w.Header().Set("Vary", "Origin")
+
 			if allowed {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				if config.Credentials {
@@ -44,10 +47,15 @@ func CORS(config CORSConfig) Middleware {
 				if len(config.Headers) > 0 {
 					w.Header().Set("Access-Control-Allow-Headers", strings.Join(config.Headers, ", "))
 				}
+				w.Header().Set("Access-Control-Max-Age", "86400")
 			}
 
 			// Handle preflight
 			if r.Method == http.MethodOptions {
+				if !allowed {
+					http.Error(w, "Forbidden", http.StatusForbidden)
+					return
+				}
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}

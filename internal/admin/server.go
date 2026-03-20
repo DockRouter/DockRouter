@@ -4,6 +4,7 @@ package admin
 import (
 	"context"
 	"net/http"
+	"time"
 )
 
 // Server runs the admin HTTP server
@@ -23,13 +24,19 @@ func NewServer(addr string, handler http.Handler) *Server {
 // Start begins listening for admin requests
 func (s *Server) Start(ctx context.Context) error {
 	srv := &http.Server{
-		Addr:    s.addr,
-		Handler: s.handler,
+		Addr:              s.addr,
+		Handler:           s.handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	go func() {
 		<-ctx.Done()
-		srv.Shutdown(context.Background())
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		srv.Shutdown(shutdownCtx)
 	}()
 
 	return srv.ListenAndServe()

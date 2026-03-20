@@ -18,6 +18,9 @@ func BasicAuth(users map[string]string) Middleware {
 
 			expectedPass, exists := users[user]
 			if !exists {
+				// Always do a comparison to prevent timing side-channel
+				// on user existence
+				subtle.ConstantTimeCompare([]byte(pass), []byte("__dummy_password__"))
 				unauthorized(w)
 				return
 			}

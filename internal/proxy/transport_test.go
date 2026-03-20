@@ -40,9 +40,9 @@ func TestNewTransport(t *testing.T) {
 		t.Error("DisableKeepAlives should be false")
 	}
 
-	// Verify compression is enabled
-	if transport.DisableCompression != false {
-		t.Error("DisableCompression should be false")
+	// Verify compression passthrough is enabled (DisableCompression=true for proxy)
+	if transport.DisableCompression != true {
+		t.Error("DisableCompression should be true for transparent proxy passthrough")
 	}
 }
 

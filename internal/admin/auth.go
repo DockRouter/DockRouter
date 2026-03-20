@@ -24,7 +24,7 @@ func NewAuth(username, password string) *Auth {
 func (a *Auth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Skip auth if not configured
-		if a.username == "" {
+		if a.username == "" && a.password == "" {
 			next.ServeHTTP(w, r)
 			return
 		}

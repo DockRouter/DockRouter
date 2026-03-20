@@ -114,7 +114,7 @@ func (e *Engine) Sync(ctx context.Context) error {
 		detail, err := e.client.InspectContainer(ctx, c.ID)
 		if err != nil {
 			e.logger.Warn("Failed to inspect container",
-				"container", c.ID[:12],
+				"container", truncateID(c.ID),
 				"error", err,
 			)
 			continue
@@ -212,6 +212,11 @@ func (ci *ContainerInfo) Changed(other *ContainerInfo) bool {
 
 // watchEvents watches Docker events for container changes
 func (e *Engine) watchEvents(ctx context.Context) {
+	defer func() {
+		e.mu.Lock()
+		e.running = false
+		e.mu.Unlock()
+	}()
 	for {
 		select {
 		case <-ctx.Done():
@@ -243,25 +248,27 @@ func (e *Engine) handleEvent(ctx context.Context, event Event) {
 	containerID := GetContainerID(event)
 	containerName := GetContainerName(event)
 
+	shortID := truncateID(containerID)
+
 	switch {
 	case IsStartEvent(event):
 		e.logger.Debug("Container started",
 			"container", containerName,
-			"id", containerID[:12],
+			"id", shortID,
 		)
 		e.onContainerStart(ctx, containerID)
 
 	case IsStopEvent(event):
 		e.logger.Debug("Container stopped",
 			"container", containerName,
-			"id", containerID[:12],
+			"id", shortID,
 		)
 		e.onContainerStop(containerID)
 
 	case IsHealthEvent(event):
 		e.logger.Debug("Container health changed",
 			"container", containerName,
-			"id", containerID[:12],
+			"id", shortID,
 		)
 		// Refresh container info
 		e.onContainerStart(ctx, containerID)
@@ -274,7 +281,7 @@ func (e *Engine) onContainerStart(ctx context.Context, id string) {
 	detail, err := e.client.InspectContainer(ctx, id)
 	if err != nil {
 		e.logger.Error("Failed to inspect started container",
-			"container", id[:12],
+			"container", truncateID(id),
 			"error", err,
 		)
 		return
@@ -354,23 +361,29 @@ func (e *Engine) pollLoop(ctx context.Context) {
 	}
 }
 
-// GetContainers returns all discovered containers
+// GetContainers returns all discovered containers (returns copies to avoid data races)
 func (e *Engine) GetContainers() []*ContainerInfo {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
 	result := make([]*ContainerInfo, 0, len(e.containers))
 	for _, info := range e.containers {
-		result = append(result, info)
+		cp := *info
+		result = append(result, &cp)
 	}
 	return result
 }
 
-// GetContainer returns a specific container
+// GetContainer returns a specific container (returns a copy to avoid data races)
 func (e *Engine) GetContainer(id string) *ContainerInfo {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.containers[id]
+	info, ok := e.containers[id]
+	if !ok {
+		return nil
+	}
+	cp := *info
+	return &cp
 }
 
 // Helper functions
@@ -403,10 +416,26 @@ func intToStr(n int) string {
 	if n == 0 {
 		return "0"
 	}
+	neg := false
+	if n < 0 {
+		neg = true
+		n = -n
+	}
 	var s []byte
 	for n > 0 {
 		s = append([]byte{byte('0' + n%10)}, s...)
 		n /= 10
 	}
+	if neg {
+		s = append([]byte{'-'}, s...)
+	}
 	return string(s)
+}
+
+// truncateID safely truncates a container ID to 12 characters
+func truncateID(id string) string {
+	if len(id) > 12 {
+		return id[:12]
+	}
+	return id
 }

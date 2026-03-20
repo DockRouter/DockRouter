@@ -87,8 +87,16 @@ func (f *IPFilter) Middleware() Middleware {
 // It checks proxy headers if the request comes from a trusted proxy
 func extractIP(r *http.Request, trustedProxies []*net.IPNet) net.IP {
 	// Get the direct peer IP
-	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		// RemoteAddr may not have a port (e.g., Unix socket)
+		host = r.RemoteAddr
+	}
 	peerIP := net.ParseIP(host)
+	if peerIP == nil {
+		// Cannot parse IP - return loopback as safe default
+		return net.IPv4(127, 0, 0, 1)
+	}
 
 	// If no trusted proxies configured, just use peer IP
 	if len(trustedProxies) == 0 {

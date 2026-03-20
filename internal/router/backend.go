@@ -2,6 +2,7 @@
 package router
 
 import (
+	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -53,8 +54,9 @@ type BackendTarget struct {
 	LastCheck   time.Time
 
 	// Stats
-	requests int64
-	failures int64
+	requests      int64
+	failures      int64
+	activeConns   int64
 }
 
 // NewBackendPool creates a new backend pool
@@ -117,6 +119,8 @@ func (p *BackendPool) Select(clientIP string) *BackendTarget {
 	switch p.Strategy {
 	case RoundRobin:
 		return p.selectRoundRobin(healthy)
+	case Random:
+		return p.selectRandom(healthy)
 	case IPHash:
 		return p.selectIPHash(healthy, clientIP)
 	case LeastConn:
@@ -134,6 +138,11 @@ func (p *BackendPool) selectRoundRobin(targets []*BackendTarget) *BackendTarget 
 	return targets[idx%uint64(len(targets))]
 }
 
+// selectRandom selects a random backend
+func (p *BackendPool) selectRandom(targets []*BackendTarget) *BackendTarget {
+	return targets[rand.Intn(len(targets))]
+}
+
 // selectIPHash selects based on client IP hash
 func (p *BackendPool) selectIPHash(targets []*BackendTarget, clientIP string) *BackendTarget {
 	if clientIP == "" {
@@ -149,15 +158,15 @@ func (p *BackendPool) selectIPHash(targets []*BackendTarget, clientIP string) *B
 	return targets[hash%uint64(len(targets))]
 }
 
-// selectLeastConn selects target with least connections
+// selectLeastConn selects target with least active connections
 func (p *BackendPool) selectLeastConn(targets []*BackendTarget) *BackendTarget {
 	var selected *BackendTarget
-	minReqs := int64(1<<63 - 1)
+	minConns := int64(1<<63 - 1)
 
 	for _, t := range targets {
-		reqs := atomic.LoadInt64(&t.requests)
-		if reqs < minReqs {
-			minReqs = reqs
+		conns := atomic.LoadInt64(&t.activeConns)
+		if conns < minConns {
+			minConns = conns
 			selected = t
 		}
 	}
@@ -175,10 +184,11 @@ func (p *BackendPool) selectWeightedRoundRobin(targets []*BackendTarget) *Backen
 	// Calculate total weight
 	totalWeight := 0
 	for _, t := range targets {
-		if t.Weight <= 0 {
-			t.Weight = 1 // Default weight
+		w := t.Weight
+		if w <= 0 {
+			w = 1
 		}
-		totalWeight += t.Weight
+		totalWeight += w
 	}
 
 	// Use counter to select based on weight distribution
@@ -188,7 +198,11 @@ func (p *BackendPool) selectWeightedRoundRobin(targets []*BackendTarget) *Backen
 	// Find which backend this position maps to
 	cumulative := 0
 	for _, t := range targets {
-		cumulative += t.Weight
+		w := t.Weight
+		if w <= 0 {
+			w = 1
+		}
+		cumulative += w
 		if pos < cumulative {
 			return t
 		}
@@ -226,7 +240,7 @@ func (p *BackendPool) MarkUnhealthy(address string) {
 	}
 }
 
-// RecordRequest records a request to a backend
+// RecordRequest records a request to a backend (increments active connections)
 func (p *BackendPool) RecordRequest(address string) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -234,6 +248,20 @@ func (p *BackendPool) RecordRequest(address string) {
 	for _, t := range p.Targets {
 		if t.Address == address {
 			atomic.AddInt64(&t.requests, 1)
+			atomic.AddInt64(&t.activeConns, 1)
+			return
+		}
+	}
+}
+
+// CompleteRequest marks a request as completed (decrements active connections)
+func (p *BackendPool) CompleteRequest(address string) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	for _, t := range p.Targets {
+		if t.Address == address {
+			atomic.AddInt64(&t.activeConns, -1)
 			return
 		}
 	}

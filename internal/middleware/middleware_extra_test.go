@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"crypto/tls"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -568,26 +569,20 @@ func TestRedirectHTTPSDifferentPorts(t *testing.T) {
 }
 
 func TestStripPrefixNoMatch(t *testing.T) {
-	// Note: StripPrefix blindly removes len(prefix) characters
-	// This test verifies the current behavior (not checking for prefix match)
-	var receivedPath string
+	// StripPrefix returns 404 when path doesn't match the prefix
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedPath = r.URL.Path
 		w.WriteHeader(http.StatusOK)
 	})
 
 	stripHandler := StripPrefix("/api")(handler)
 
-	// Path that doesn't start with prefix - StripPrefix still strips len(prefix) chars
+	// Path that doesn't start with prefix - returns 404
 	req := httptest.NewRequest("GET", "/other/path", nil)
 	rec := httptest.NewRecorder()
 	stripHandler.ServeHTTP(rec, req)
 
-	// Current implementation strips 4 chars (/api), so "/other/path" becomes "er/path"
-	// Note: This test documents current behavior, not ideal behavior
-	expectedPath := "er/path" // "/other/path" with first 4 chars removed
-	if receivedPath != expectedPath {
-		t.Errorf("Path = %s, want %s", receivedPath, expectedPath)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("Status = %d, want %d for non-matching prefix", rec.Code, http.StatusNotFound)
 	}
 }
 
@@ -982,6 +977,24 @@ func (m *mockMetricsCollector) SetGauge(name string, value float64) {
 	m.gaugeValues[name] = value
 }
 
+func (m *mockMetricsCollector) IncGauge(name string) {
+	if m.gaugeCalls == nil {
+		m.gaugeCalls = make(map[string]int)
+		m.gaugeValues = make(map[string]float64)
+	}
+	m.gaugeCalls[name]++
+	m.gaugeValues[name]++
+}
+
+func (m *mockMetricsCollector) DecGauge(name string) {
+	if m.gaugeCalls == nil {
+		m.gaugeCalls = make(map[string]int)
+		m.gaugeValues = make(map[string]float64)
+	}
+	m.gaugeCalls[name]++
+	m.gaugeValues[name]--
+}
+
 func TestCircuitBreakerStateMethod(t *testing.T) {
 	cb := NewCircuitBreaker(5, time.Minute)
 
@@ -1184,7 +1197,8 @@ func TestRedirectHTTPSSkipWithURLScheme(t *testing.T) {
 	// Request with r.URL.Scheme = https should not redirect
 	req := httptest.NewRequest("GET", "/path", nil)
 	req.Host = "example.com"
-	req.URL.Scheme = "https"
+	// Use TLS to indicate HTTPS (r.URL.Scheme is empty in Go's http.Server)
+	req.TLS = &tls.ConnectionState{}
 	rec := httptest.NewRecorder()
 
 	redirectHandler.ServeHTTP(rec, req)
@@ -1393,9 +1407,9 @@ func TestSecurityHeadersWithHTTPS(t *testing.T) {
 
 	securityHandler := SecurityHeaders(handler)
 
-	// Test with HTTPS request
+	// Test with HTTPS request (use TLS, not URL.Scheme)
 	req := httptest.NewRequest("GET", "/", nil)
-	req.URL.Scheme = "https"
+	req.TLS = &tls.ConnectionState{}
 	rec := httptest.NewRecorder()
 
 	securityHandler.ServeHTTP(rec, req)

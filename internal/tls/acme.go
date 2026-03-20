@@ -339,13 +339,9 @@ func (c *ACMEClient) PollOrder(orderURL string, desiredStatus string, timeout ti
 
 // HTTP request helpers
 
+// signedGet performs an ACME POST-as-GET request (RFC 8555 Section 6.3)
 func (c *ACMEClient) signedGet(url string) (*http.Response, error) {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "DockRouter/1.0")
-	return c.httpClient.Do(req)
+	return c.signedPost(url, nil)
 }
 
 func (c *ACMEClient) signedPost(url string, payload interface{}) (*http.Response, error) {
@@ -436,11 +432,12 @@ func (c *ACMEClient) signPayload(payload interface{}, url string) (map[string]in
 
 // jwk returns the JWK for the account key
 func (c *ACMEClient) jwk() map[string]interface{} {
+	// P-256 coordinates must be exactly 32 bytes, padded with leading zeros
 	return map[string]interface{}{
 		"crv": "P-256",
 		"kty": "EC",
-		"x":   base64URLEncode(c.privateKey.PublicKey.X.Bytes()),
-		"y":   base64URLEncode(c.privateKey.PublicKey.Y.Bytes()),
+		"x":   base64URLEncode(padBytes(c.privateKey.PublicKey.X.Bytes(), 32)),
+		"y":   base64URLEncode(padBytes(c.privateKey.PublicKey.Y.Bytes(), 32)),
 	}
 }
 
@@ -457,13 +454,27 @@ func parseECDSASignature(der []byte) ([]byte, error) {
 		return nil, fmt.Errorf("invalid DER signature")
 	}
 
+	// Verify R INTEGER tag
+	if der[2] != 0x02 {
+		return nil, fmt.Errorf("invalid DER signature: expected INTEGER tag for R")
+	}
+
 	// Find R
 	rLen := int(der[3])
+	if 4+rLen >= len(der) {
+		return nil, fmt.Errorf("invalid DER signature: R length exceeds data")
+	}
 	r := der[4 : 4+rLen]
 
 	// Find S
 	sStart := 4 + rLen
+	if sStart+1 >= len(der) || der[sStart] != 0x02 {
+		return nil, fmt.Errorf("invalid DER signature: expected INTEGER tag for S")
+	}
 	sLen := int(der[sStart+1])
+	if sStart+2+sLen > len(der) {
+		return nil, fmt.Errorf("invalid DER signature: S length exceeds data")
+	}
 	s := der[sStart+2 : sStart+2+sLen]
 
 	// Pad to 32 bytes

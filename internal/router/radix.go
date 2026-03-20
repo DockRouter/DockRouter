@@ -41,6 +41,13 @@ type RadixTree struct {
 	root *RadixNode
 }
 
+// IsEmpty returns true if the tree has no routes
+func (t *RadixTree) IsEmpty() bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.root == nil || (!t.root.isLeaf && len(t.root.children) == 0)
+}
+
 // NewRadixTree creates a new radix tree
 func NewRadixTree() *RadixTree {
 	return &RadixTree{

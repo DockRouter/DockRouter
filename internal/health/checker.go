@@ -89,8 +89,10 @@ func (c *Checker) checkOne(target string, check *HealthCheck) {
 		check.ConsecPass++
 
 		// Recovery logic
-		if check.State == StateUnhealthy || check.State == StateRecovering {
-			if check.ConsecPass >= check.Recovery {
+		if check.State == StateUnknown {
+			check.State = StateHealthy
+		} else if check.State == StateUnhealthy || check.State == StateRecovering {
+			if check.Recovery <= 0 || check.ConsecPass >= check.Recovery {
 				check.State = StateHealthy
 			} else {
 				check.State = StateRecovering

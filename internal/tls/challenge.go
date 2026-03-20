@@ -51,6 +51,12 @@ func (s *ChallengeSolver) RemoveToken(token string) {
 // Handler returns an HTTP handler for challenge requests
 func (s *ChallengeSolver) Handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Validate path before slicing
+		if !s.Matches(r.URL.Path) {
+			http.Error(w, "Invalid request", http.StatusBadRequest)
+			return
+		}
+
 		// Extract token from path
 		token := r.URL.Path[len(s.pathPrefix):]
 		if token == "" {
@@ -106,10 +112,11 @@ func (k *AccountKey) JWK() map[string]interface{} {
 	if k.key == nil {
 		return nil
 	}
+	// P-256 coordinates must be exactly 32 bytes, padded with leading zeros
 	return map[string]interface{}{
 		"crv": "P-256",
 		"kty": "EC",
-		"x":   base64URLEncode(k.key.PublicKey.X.Bytes()),
-		"y":   base64URLEncode(k.key.PublicKey.Y.Bytes()),
+		"x":   base64URLEncode(padBytes(k.key.PublicKey.X.Bytes(), 32)),
+		"y":   base64URLEncode(padBytes(k.key.PublicKey.Y.Bytes(), 32)),
 	}
 }

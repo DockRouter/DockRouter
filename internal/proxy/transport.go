@@ -35,7 +35,7 @@ func newTransport() *http.Transport {
 		// Enable connection reuse
 		DisableKeepAlives: false,
 
-		// Compress if not already
-		DisableCompression: false,
+		// Pass through backend compression transparently
+		DisableCompression: true,
 	}
 }

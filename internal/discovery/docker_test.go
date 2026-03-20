@@ -506,9 +506,9 @@ func TestEventStreamSubscribeWithFilters(t *testing.T) {
 		cancel()
 	} else {
 		// Expected - Docker socket not available
-		// Verify type filter was added
-		if filters["type"] != "container" {
-			t.Error("SubscribeWithFilters should add type=container filter")
+		// SubscribeWithFilters now copies the map, so the original should NOT be mutated
+		if filters["type"] == "container" {
+			t.Error("SubscribeWithFilters should not mutate the caller's filter map")
 		}
 	}
 }
@@ -540,11 +540,11 @@ func TestEventStreamSubscribeAddsTypeFilter(t *testing.T) {
 	}
 
 	// Call SubscribeWithFilters - it will fail due to no socket,
-	// but we can verify it adds the type filter
+	// but we can verify it does NOT mutate the caller's map
 	_, _ = stream.SubscribeWithFilters(ctx, filters)
 
-	if filters["type"] != "container" {
-		t.Error("SubscribeWithFilters should add type=container filter when missing")
+	if _, exists := filters["type"]; exists {
+		t.Error("SubscribeWithFilters should not mutate the caller's filter map")
 	}
 }
 

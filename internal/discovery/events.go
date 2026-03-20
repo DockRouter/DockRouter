@@ -3,6 +3,7 @@ package discovery
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -28,12 +29,17 @@ func (e *EventStream) Subscribe(ctx context.Context) (<-chan Event, error) {
 
 // SubscribeWithFilters starts listening with custom filters
 func (e *EventStream) SubscribeWithFilters(ctx context.Context, filters map[string]string) (<-chan Event, error) {
+	// Copy filters to avoid mutating the caller's map
+	f := make(map[string]string, len(filters)+1)
+	for k, v := range filters {
+		f[k] = v
+	}
 	// Ensure we only get container events
-	if _, ok := filters["type"]; !ok {
-		filters["type"] = "container"
+	if _, ok := f["type"]; !ok {
+		f["type"] = "container"
 	}
 
-	return e.client.EventsStream(ctx, filters)
+	return e.client.EventsStream(ctx, f)
 }
 
 // SubscribeLifecycle listens for container lifecycle events (start, stop, die)
@@ -57,8 +63,9 @@ func IsStopEvent(event Event) bool {
 }
 
 // IsHealthEvent checks if event is a health status change
+// Docker sends actions like "health_status: healthy" and "health_status: unhealthy"
 func IsHealthEvent(event Event) bool {
-	return event.Type == "container" && event.Action == "health_status"
+	return event.Type == "container" && strings.HasPrefix(event.Action, "health_status")
 }
 
 // GetContainerID extracts container ID from event

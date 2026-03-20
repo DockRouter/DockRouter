@@ -40,33 +40,36 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	// Validate log level
+	// Normalize and validate log level
+	c.LogLevel = strings.ToLower(c.LogLevel)
 	validLevels := map[string]bool{
 		"debug": true,
 		"info":  true,
 		"warn":  true,
 		"error": true,
 	}
-	if !validLevels[strings.ToLower(c.LogLevel)] {
+	if !validLevels[c.LogLevel] {
 		errs = append(errs, fmt.Errorf("invalid log level: %s (valid: debug, info, warn, error)", c.LogLevel))
 	}
 
-	// Validate log format
+	// Normalize and validate log format
+	c.LogFormat = strings.ToLower(c.LogFormat)
 	validFormats := map[string]bool{
 		"json": true,
 		"text": true,
 	}
-	if !validFormats[strings.ToLower(c.LogFormat)] {
+	if !validFormats[c.LogFormat] {
 		errs = append(errs, fmt.Errorf("invalid log format: %s (valid: json, text)", c.LogFormat))
 	}
 
-	// Validate TLS mode
+	// Normalize and validate TLS mode
+	c.DefaultTLS = strings.ToLower(c.DefaultTLS)
 	validTLS := map[string]bool{
 		"auto":   true,
 		"manual": true,
 		"off":    true,
 	}
-	if !validTLS[strings.ToLower(c.DefaultTLS)] {
+	if !validTLS[c.DefaultTLS] {
 		errs = append(errs, fmt.Errorf("invalid TLS mode: %s (valid: auto, manual, off)", c.DefaultTLS))
 	}
 

@@ -3,6 +3,7 @@ package proxy
 
 import (
 	"fmt"
+	"html"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -46,7 +47,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request, target string)
 	proxy := httputil.NewSingleHostReverseProxy(targetURL)
 	proxy.Transport = p.transport
 	proxy.BufferPool = p.bufferPool
-	proxy.ErrorHandler = p.errorHandler
+
+	// Track proxy errors via closure
+	var proxyErr error
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		proxyErr = err
+		p.errorHandler(w, r, err)
+	}
 
 	// Director to modify request before forwarding
 	originalDirector := proxy.Director
@@ -76,7 +83,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request, target string)
 	// Forward the request
 	proxy.ServeHTTP(w, r)
 
-	return nil
+	return proxyErr
 }
 
 // setForwardedHeaders sets standard proxy headers
@@ -139,7 +146,7 @@ func (p *Proxy) errorHandler(w http.ResponseWriter, r *http.Request, err error) 
 	w.WriteHeader(status)
 
 	requestID := r.Header.Get("X-Request-Id")
-	w.Write([]byte(buildErrorPage(status, http.StatusText(status), err.Error(), requestID)))
+	w.Write([]byte(buildErrorPage(status, http.StatusText(status), "The upstream server is not available", requestID)))
 }
 
 // SetTimeout sets the proxy timeout
@@ -169,6 +176,10 @@ func removeHopHeaders(hdr http.Header) {
 
 // buildErrorPage generates a branded error page
 func buildErrorPage(code int, title, message, requestID string) string {
+	safeTitle := html.EscapeString(title)
+	safeMessage := html.EscapeString(message)
+	safeRequestID := html.EscapeString(requestID)
+
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -190,9 +201,9 @@ func buildErrorPage(code int, title, message, requestID string) string {
         %s
     </div>
 </body>
-</html>`, code, title, code, title, func() string {
-		if requestID != "" {
-			return `<div class="request-id">Request ID: ` + requestID + `</div>`
+</html>`, code, safeTitle, code, safeMessage, func() string {
+		if safeRequestID != "" {
+			return `<div class="request-id">Request ID: ` + safeRequestID + `</div>`
 		}
 		return ""
 	}())

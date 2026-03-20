@@ -21,7 +21,7 @@ func (c *Collector) PrometheusFormat(w io.Writer) {
 	// Write gauges
 	for name, gauge := range c.gauges {
 		fmt.Fprintf(w, "# TYPE %s gauge\n", sanitizeName(name))
-		fmt.Fprintf(w, "%s %g\n\n", sanitizeName(name), gauge.value)
+		fmt.Fprintf(w, "%s %g\n\n", sanitizeName(name), gauge.Value())
 	}
 
 	// Write histograms

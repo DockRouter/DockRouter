@@ -101,17 +101,24 @@ func (b *RouteMiddlewareBuilder) getOrCreateRateLimiter(routeID string, config R
 
 	maxSize := config.Count
 	if maxSize == 0 {
-		maxSize = config.Count
+		maxSize = 100 // Default burst size
 	}
 
 	rl := middleware.NewRateLimiter(config.Count, int(window.Seconds()), maxSize)
-	b.rateLimiters.Store(routeID, rl)
+	actual, loaded := b.rateLimiters.LoadOrStore(routeID, rl)
+	if loaded {
+		// Another goroutine created it first, close ours and use theirs
+		rl.Close()
+		return actual.(*middleware.RateLimiter)
+	}
 	return rl
 }
 
 // RemoveRateLimiter removes the rate limiter for a route (cleanup on route removal)
 func (b *RouteMiddlewareBuilder) RemoveRateLimiter(routeID string) {
-	b.rateLimiters.Delete(routeID)
+	if rl, ok := b.rateLimiters.LoadAndDelete(routeID); ok {
+		rl.(*middleware.RateLimiter).Close()
+	}
 }
 
 // getOrCreateCircuitBreaker gets or creates a circuit breaker for a route
@@ -131,7 +138,10 @@ func (b *RouteMiddlewareBuilder) getOrCreateCircuitBreaker(routeID string, confi
 	}
 
 	cb := middleware.NewCircuitBreaker(threshold, window)
-	b.circuitBreakers.Store(routeID, cb)
+	actual, loaded := b.circuitBreakers.LoadOrStore(routeID, cb)
+	if loaded {
+		return actual.(*middleware.CircuitBreaker)
+	}
 	return cb
 }
 

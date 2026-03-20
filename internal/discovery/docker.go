@@ -326,7 +326,11 @@ func (c *DockerClient) EventsStream(ctx context.Context, filters map[string]stri
 					}
 					continue
 				}
-				events <- event
+				select {
+				case events <- event:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 	}()

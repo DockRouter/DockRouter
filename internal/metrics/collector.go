@@ -2,6 +2,7 @@
 package metrics
 
 import (
+	"math"
 	"sync"
 	"sync/atomic"
 )
@@ -20,9 +21,9 @@ type Counter struct {
 	value uint64
 }
 
-// Gauge is a point-in-time value
+// Gauge is a point-in-time value (uses atomic operations for thread safety)
 type Gauge struct {
-	value float64
+	bits uint64
 }
 
 // Histogram tracks distribution of values
@@ -87,7 +88,34 @@ func (c *Collector) Gauge(name string) *Gauge {
 
 // Set sets the gauge value
 func (g *Gauge) Set(v float64) {
-	g.value = v
+	atomic.StoreUint64(&g.bits, math.Float64bits(v))
+}
+
+// Value returns the gauge value
+func (g *Gauge) Value() float64 {
+	return math.Float64frombits(atomic.LoadUint64(&g.bits))
+}
+
+// Inc increments the gauge by 1
+func (g *Gauge) Inc() {
+	for {
+		old := atomic.LoadUint64(&g.bits)
+		new := math.Float64bits(math.Float64frombits(old) + 1)
+		if atomic.CompareAndSwapUint64(&g.bits, old, new) {
+			return
+		}
+	}
+}
+
+// Dec decrements the gauge by 1
+func (g *Gauge) Dec() {
+	for {
+		old := atomic.LoadUint64(&g.bits)
+		new := math.Float64bits(math.Float64frombits(old) - 1)
+		if atomic.CompareAndSwapUint64(&g.bits, old, new) {
+			return
+		}
+	}
 }
 
 // Histogram gets or creates a histogram
@@ -159,4 +187,14 @@ func (c *Collector) SetGauge(name string, value float64) {
 // ObserveHistogram is a convenience method to observe a histogram by name
 func (c *Collector) ObserveHistogram(name string, value float64) {
 	c.Histogram(name).Observe(value)
+}
+
+// IncGauge is a convenience method to increment a gauge by name
+func (c *Collector) IncGauge(name string) {
+	c.Gauge(name).Inc()
+}
+
+// DecGauge is a convenience method to decrement a gauge by name
+func (c *Collector) DecGauge(name string) {
+	c.Gauge(name).Dec()
 }

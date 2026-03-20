@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -120,12 +121,14 @@ func main() {
 
 	logger.Info("Shutting down...")
 
+	// Cancel context first to stop discovery engine goroutines
+	cancel()
+
 	// Graceful shutdown with timeout
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
 	app.shutdown(shutdownCtx)
-	cancel()
 
 	logger.Info("Goodbye!")
 }
@@ -385,94 +388,111 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 		certificates = len(a.tlsManager.ListCertificates())
 	}
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"status":"ok","version":"%s","routes":%d,"containers":%d,"certificates":%d,"uptime":"%s","http_port":%d,"https_port":%d}`,
-		a.config.Version,
-		a.routeTable.Count(),
-		containers,
-		certificates,
-		uptime.Round(time.Second),
-		a.config.HTTPPort,
-		a.config.HTTPSPort,
-	)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":       "ok",
+		"version":      a.config.Version,
+		"routes":       a.routeTable.Count(),
+		"containers":   containers,
+		"certificates": certificates,
+		"uptime":       uptime.Round(time.Second).String(),
+		"http_port":    a.config.HTTPPort,
+		"https_port":   a.config.HTTPSPort,
+	})
 }
 
 func (a *App) handleRoutes(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	routes := a.routeTable.List()
-	fmt.Fprintf(w, "[")
-	for i, route := range routes {
-		if i > 0 {
-			fmt.Fprintf(w, ",")
-		}
+	type routeEntry struct {
+		ID         string `json:"id"`
+		Host       string `json:"host"`
+		PathPrefix string `json:"path_prefix"`
+		Backend    string `json:"backend"`
+		TLS        bool   `json:"tls"`
+		Healthy    bool   `json:"healthy"`
+	}
+	entries := make([]routeEntry, 0, len(routes))
+	for _, route := range routes {
 		backend := "-"
 		if route.Backend != nil && len(route.Backend.Targets) > 0 {
 			backend = route.Backend.Targets[0].Address
 		}
-		tlsStatus := route.TLS.Mode != ""
-		fmt.Fprintf(w, `{"id":"%s","host":"%s","path_prefix":"%s","backend":"%s","tls":%v,"healthy":%v}`,
-			route.ID[:12],
-			route.Host,
-			route.PathPrefix,
-			backend,
-			tlsStatus,
-			route.Backend != nil && !route.Backend.AllUnhealthy(),
-		)
+		entries = append(entries, routeEntry{
+			ID:         truncateID(route.ID),
+			Host:       route.Host,
+			PathPrefix: route.PathPrefix,
+			Backend:    backend,
+			TLS:        route.TLS.Mode != "",
+			Healthy:    route.Backend != nil && !route.Backend.AllUnhealthy(),
+		})
 	}
-	fmt.Fprintf(w, "]")
+	json.NewEncoder(w).Encode(entries)
 }
 
 func (a *App) handleContainers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if a.discoveryEngine == nil {
-		fmt.Fprintf(w, "[]")
+		json.NewEncoder(w).Encode([]interface{}{})
 		return
 	}
 	containers := a.discoveryEngine.GetContainers()
-	fmt.Fprintf(w, "[")
-	for i, c := range containers {
-		if i > 0 {
-			fmt.Fprintf(w, ",")
-		}
+	type containerEntry struct {
+		ID      string `json:"id"`
+		Name    string `json:"name"`
+		Image   string `json:"image"`
+		Host    string `json:"host"`
+		Address string `json:"address"`
+		Running bool   `json:"running"`
+		Status  string `json:"status"`
+		Healthy bool   `json:"healthy"`
+		Labels  int    `json:"labels"`
+	}
+	entries := make([]containerEntry, 0, len(containers))
+	for _, c := range containers {
 		status := "running"
 		if !c.Healthy {
 			status = "unhealthy"
 		}
-		// Count dr.* labels
 		drLabelCount := 0
 		for label := range c.Labels {
 			if strings.HasPrefix(label, "dr.") {
 				drLabelCount++
 			}
 		}
-		fmt.Fprintf(w, `{"id":"%s","name":"%s","image":"%s","host":"%s","address":"%s","running":true,"status":"%s","healthy":%v,"labels":%d}`,
-			c.ID[:12],
-			c.Name,
-			c.Image,
-			c.Config.Host,
-			c.Address,
-			status,
-			c.Healthy,
-			drLabelCount,
-		)
+		host := ""
+		if c.Config != nil {
+			host = c.Config.Host
+		}
+		entries = append(entries, containerEntry{
+			ID:      truncateID(c.ID),
+			Name:    c.Name,
+			Image:   c.Image,
+			Host:    host,
+			Address: c.Address,
+			Running: true,
+			Status:  status,
+			Healthy: c.Healthy,
+			Labels:  drLabelCount,
+		})
 	}
-	fmt.Fprintf(w, "]")
+	json.NewEncoder(w).Encode(entries)
 }
 
 func (a *App) handleCertificates(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if a.tlsManager == nil {
-		fmt.Fprintf(w, "[]")
+		json.NewEncoder(w).Encode([]interface{}{})
 		return
 	}
 	domains := a.tlsManager.ListCertificates()
-	fmt.Fprintf(w, "[")
-	for i, domain := range domains {
-		if i > 0 {
-			fmt.Fprintf(w, ",")
-		}
-		fmt.Fprintf(w, `{"domain":"%s"}`, domain)
+	type certEntry struct {
+		Domain string `json:"domain"`
 	}
-	fmt.Fprintf(w, "]")
+	entries := make([]certEntry, 0, len(domains))
+	for _, domain := range domains {
+		entries = append(entries, certEntry{Domain: domain})
+	}
+	json.NewEncoder(w).Encode(entries)
 }
 
 func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -487,13 +507,13 @@ func (a *App) handleMetrics(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"http_port":%d,"https_port":%d,"admin":%v,"acme_email":"%s","log_level":"%s"}`,
-		a.config.HTTPPort,
-		a.config.HTTPSPort,
-		a.config.Admin,
-		a.config.ACMEEmail,
-		a.config.LogLevel,
-	)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"http_port":  a.config.HTTPPort,
+		"https_port": a.config.HTTPSPort,
+		"admin":      a.config.Admin,
+		"acme_email": a.config.ACMEEmail,
+		"log_level":  a.config.LogLevel,
+	})
 }
 
 func (a *App) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -625,7 +645,15 @@ func (s *appRouteSink) AddRoute(info *discovery.ContainerInfo) {
 
 func (s *appRouteSink) RemoveRoute(containerID string) {
 	s.app.routeTable.RemoveByContainer(containerID)
-	s.app.logger.Info("Route removed", "container_id", containerID[:12])
+	s.app.logger.Info("Route removed", "container_id", truncateID(containerID))
+}
+
+// truncateID safely truncates an ID to 12 characters for display
+func truncateID(id string) string {
+	if len(id) > 12 {
+		return id[:12]
+	}
+	return id
 }
 
 func parseLogLevel(level string) log.Level {

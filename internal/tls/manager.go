@@ -408,7 +408,10 @@ func GenerateSelfSigned(domain string) (*tls.Certificate, error) {
 		return nil, err
 	}
 
-	serialNumber, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate serial number: %w", err)
+	}
 
 	template := &x509.Certificate{
 		SerialNumber: serialNumber,
@@ -426,10 +429,15 @@ func GenerateSelfSigned(domain string) (*tls.Certificate, error) {
 		return nil, err
 	}
 
+	leaf, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse generated certificate: %w", err)
+	}
+
 	cert := &tls.Certificate{
 		Certificate: [][]byte{certDER},
 		PrivateKey:  privKey,
-		Leaf:        template,
+		Leaf:        leaf,
 	}
 
 	return cert, nil

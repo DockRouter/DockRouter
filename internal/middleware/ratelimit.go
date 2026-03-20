@@ -2,7 +2,9 @@
 package middleware
 
 import (
+	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -15,6 +17,7 @@ type RateLimiter struct {
 	window     int     // window in seconds
 	maxSize    int     // max bucket size (burst)
 	refillRate float64 // tokens per second
+	done       chan struct{}
 }
 
 type tokenBucket struct {
@@ -24,12 +27,19 @@ type tokenBucket struct {
 
 // NewRateLimiter creates a new rate limiter
 func NewRateLimiter(rate, window, maxSize int) *RateLimiter {
+	if window <= 0 {
+		window = 60
+	}
+	if maxSize <= 0 {
+		maxSize = rate
+	}
 	rl := &RateLimiter{
 		buckets:    make(map[string]*tokenBucket),
 		rate:       rate,
 		window:     window,
 		maxSize:    maxSize,
 		refillRate: float64(rate) / float64(window),
+		done:       make(chan struct{}),
 	}
 
 	// Start cleanup goroutine to remove old buckets
@@ -38,11 +48,20 @@ func NewRateLimiter(rate, window, maxSize int) *RateLimiter {
 	return rl
 }
 
+// Close stops the cleanup goroutine
+func (rl *RateLimiter) Close() {
+	close(rl.done)
+}
+
 // Middleware returns a rate limiting middleware
 func (rl *RateLimiter) Middleware() Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Extract IP without port for per-IP rate limiting
 			key := r.RemoteAddr
+			if host, _, err := net.SplitHostPort(key); err == nil {
+				key = host
+			}
 
 			allowed, remaining := rl.allow(key)
 			if !allowed {
@@ -97,27 +116,24 @@ func (rl *RateLimiter) allow(key string) (bool, float64) {
 // cleanup removes old buckets periodically
 func (rl *RateLimiter) cleanup() {
 	ticker := time.NewTicker(time.Minute)
-	for range ticker.C {
-		rl.mu.Lock()
-		threshold := time.Now().Add(-5 * time.Minute)
-		for key, bucket := range rl.buckets {
-			if bucket.lastRefill.Before(threshold) {
-				delete(rl.buckets, key)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-rl.done:
+			return
+		case <-ticker.C:
+			rl.mu.Lock()
+			threshold := time.Now().Add(-5 * time.Minute)
+			for key, bucket := range rl.buckets {
+				if bucket.lastRefill.Before(threshold) {
+					delete(rl.buckets, key)
+				}
 			}
+			rl.mu.Unlock()
 		}
-		rl.mu.Unlock()
 	}
 }
 
 func intToStr(n int) string {
-	// Simple int to string without strconv import
-	if n == 0 {
-		return "0"
-	}
-	var s []byte
-	for n > 0 {
-		s = append([]byte{byte('0' + n%10)}, s...)
-		n /= 10
-	}
-	return string(s)
+	return strconv.Itoa(n)
 }

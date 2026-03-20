@@ -76,15 +76,16 @@ func (wp *WebSocketProxy) ServeHTTP(w http.ResponseWriter, r *http.Request, targ
 	}
 
 	// Copy data bidirectionally
-	go wp.copyData(backendConn, clientBuf, "backend->client")
-	wp.copyData(clientConn, backendConn, "client->backend")
+	go wp.copyData(clientConn, backendConn, "backend->client")
+	wp.copyData(backendConn, clientBuf, "client->backend")
 
 	return nil
 }
 
 func (wp *WebSocketProxy) sendUpgradeRequest(conn net.Conn, r *http.Request, target string) error {
 	// Build upgrade request
-	req := fmt.Sprintf("GET %s HTTP/1.1\r\n", r.URL.Path)
+	reqURI := r.URL.RequestURI()
+	req := fmt.Sprintf("GET %s HTTP/1.1\r\n", reqURI)
 	req += fmt.Sprintf("Host: %s\r\n", r.Host)
 	req += "Upgrade: websocket\r\n"
 	req += "Connection: Upgrade\r\n"

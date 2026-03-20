@@ -24,6 +24,8 @@ type mockProxy struct {
 func (m *mockProxy) ServeHTTP(w http.ResponseWriter, r *http.Request, target string) error {
 	m.lastTarget = target
 	if m.err != nil {
+		// Mimic real proxy behavior: error handler writes response before returning error
+		http.Error(w, "Bad Gateway", http.StatusBadGateway)
 		return m.err
 	}
 	w.WriteHeader(http.StatusOK)

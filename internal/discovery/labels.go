@@ -195,7 +195,9 @@ func ParseLabels(labels map[string]string) *RouteConfig {
 	config.parseCircuitBreaker(labels)
 
 	config.Compress = parseBool(labels[LabelCompress])
-	config.RedirectHTTPS = parseBoolDefault(labels[LabelRedirectHTTPS], true) // default true when TLS is on
+	// Default RedirectHTTPS to true only when TLS is enabled
+	redirectDefault := config.TLS != "off"
+	config.RedirectHTTPS = parseBoolDefault(labels[LabelRedirectHTTPS], redirectDefault)
 	config.StripPrefix = labels[LabelStripPrefix]
 	config.AddPrefix = labels[LabelAddPrefix]
 	config.MaxBody = parseSize(labels[LabelMaxBody])
@@ -452,9 +454,10 @@ func (c *RouteConfig) Validate() error {
 		return fmt.Errorf("dr.path must start with /: %s", c.Path)
 	}
 
-	// Validate TLS mode
+	// Normalize and validate TLS mode
+	c.TLS = strings.ToLower(c.TLS)
 	validTLS := map[string]bool{"auto": true, "manual": true, "off": true}
-	if !validTLS[strings.ToLower(c.TLS)] {
+	if !validTLS[c.TLS] {
 		return fmt.Errorf("invalid dr.tls mode: %s", c.TLS)
 	}
 

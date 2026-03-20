@@ -190,7 +190,11 @@ func loadDuration(target *time.Duration, key string) {
 
 func loadSlice(target *[]string, key string) {
 	if v := os.Getenv(key); v != "" {
-		*target = strings.Split(v, ",")
+		parts := strings.Split(v, ",")
+		for i, p := range parts {
+			parts[i] = strings.TrimSpace(p)
+		}
+		*target = parts
 	}
 }
 

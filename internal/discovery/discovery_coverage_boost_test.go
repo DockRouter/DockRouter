@@ -963,7 +963,7 @@ func TestGetContainerFound(t *testing.T) {
 	engine.containers[containerID] = expected
 
 	result := engine.GetContainer(containerID)
-	if result != expected {
+	if result == nil || result.ID != expected.ID || result.Name != expected.Name {
 		t.Error("GetContainer should return the container")
 	}
 }
