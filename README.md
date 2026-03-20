@@ -1,6 +1,10 @@
 # 🚢 DockRouter
 
-**Zero-dependency, single-binary Docker-native ingress router with automatic TLS.**
+> **Zero-dependency, single-binary Docker-native ingress router with automatic TLS.**
+
+<p align="center">
+  <img src="dockrouter_.jpeg" alt="DockRouter — Zero-dependency Docker ingress router" width="100%" />
+</p>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/DockRouter/dockrouter/actions/workflows/ci.yml/badge.svg)](https://github.com/DockRouter/dockrouter/actions/workflows/ci.yml)
