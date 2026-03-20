@@ -88,3 +88,6 @@ desktop.ini
 
 cover
 *.out
+node_modules/
+.playwright-mcp/*
+.playwright-mcp/
