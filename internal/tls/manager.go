@@ -20,12 +20,13 @@ import (
 
 // Manager handles certificate lifecycle
 type Manager struct {
-	mu        sync.RWMutex
-	certs     map[string]*tls.Certificate
-	store     *Store
-	acme      *ACMEClient
-	challenge *ChallengeSolver
-	logger    Logger
+	mu          sync.RWMutex
+	certs       map[string]*tls.Certificate
+	store       *Store
+	acme        *ACMEClient
+	challenge   *ChallengeSolver
+	logger      Logger
+	provisioning sync.Map // domain -> struct{}, tracks in-flight provisioning
 }
 
 // NewManager creates a new TLS manager
@@ -95,15 +96,18 @@ func (m *Manager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, 
 		}
 	}
 
-	// Try to provision on-demand
-	go func() {
-		if err := m.EnsureCertificate(domain); err != nil {
-			m.logger.Error("Failed to provision certificate on-demand",
-				"domain", domain,
-				"error", err,
-			)
-		}
-	}()
+	// Try to provision on-demand (deduplicate concurrent requests for same domain)
+	if _, alreadyProvisioning := m.provisioning.LoadOrStore(domain, struct{}{}); !alreadyProvisioning {
+		go func() {
+			defer m.provisioning.Delete(domain)
+			if err := m.EnsureCertificate(domain); err != nil {
+				m.logger.Error("Failed to provision certificate on-demand",
+					"domain", domain,
+					"error", err,
+				)
+			}
+		}()
+	}
 
 	return nil, fmt.Errorf("certificate not found for %s", domain)
 }
@@ -180,6 +184,19 @@ func (m *Manager) provisionCertificate(domain string) error {
 		return fmt.Errorf("failed to finalize order: %w", err)
 	}
 
+	// Poll for order completion if certificate URL is not yet available
+	if order.CertificateURL == "" {
+		polledOrder, err := m.acme.PollOrder(order.FinalizeURL, "valid", 60*time.Second)
+		if err != nil {
+			return fmt.Errorf("failed waiting for order completion: %w", err)
+		}
+		order.CertificateURL = polledOrder.CertificateURL
+	}
+
+	if order.CertificateURL == "" {
+		return fmt.Errorf("order completed but no certificate URL provided")
+	}
+
 	// Download certificate
 	certPEM, err := m.acme.DownloadCertificate(order.CertificateURL)
 	if err != nil {
@@ -198,14 +215,19 @@ func (m *Manager) provisionCertificate(domain string) error {
 	}
 
 	// Save metadata
-	expiry, _ := GetExpiry(certPEM)
+	expiry, expiryErr := GetExpiry(certPEM)
+	if expiryErr != nil {
+		m.logger.Warn("Failed to extract certificate expiry", "domain", domain, "error", expiryErr)
+	}
 	meta := &CertMeta{
 		Domain:    domain,
 		Expiry:    expiry.Unix(),
 		Issuer:    "Let's Encrypt",
 		CreatedAt: time.Now().Unix(),
 	}
-	m.store.SaveMeta(domain, meta)
+	if err := m.store.SaveMeta(domain, meta); err != nil {
+		m.logger.Warn("Failed to save certificate metadata", "domain", domain, "error", err)
+	}
 
 	// Load into memory
 	loadedCert, err := m.store.Load(domain)

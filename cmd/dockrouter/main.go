@@ -53,6 +53,9 @@ type App struct {
 	middlewareBuilder *router.RouteMiddlewareBuilder
 	startTime         time.Time
 
+	// TLS renewal
+	renewalScheduler *tlspkg.RenewalScheduler
+
 	// HTTP servers for graceful shutdown
 	httpServer  *http.Server
 	httpsServer *http.Server
@@ -198,8 +201,8 @@ func (a *App) start(ctx context.Context) {
 
 	// Start TLS renewal scheduler
 	if a.tlsManager != nil {
-		scheduler := tlspkg.NewRenewalScheduler(a.tlsManager, a.logger)
-		scheduler.Start(ctx)
+		a.renewalScheduler = tlspkg.NewRenewalScheduler(a.tlsManager, a.logger)
+		a.renewalScheduler.Start(ctx)
 	}
 
 	// Initialize proxy
