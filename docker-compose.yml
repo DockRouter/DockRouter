@@ -17,6 +17,10 @@ services:
       - DR_ACME_EMAIL=admin@example.com
       - DR_ADMIN_USER=admin
       - DR_ADMIN_PASS=changeme
+      # The admin server binds to 127.0.0.1 by default, which inside a container
+      # is unreachable from a published port. Bind to all interfaces so
+      # "9090:9090" above works — only do this with credentials set.
+      - DR_ADMIN_BIND=0.0.0.0
       - DR_LOG_LEVEL=info
     networks:
       - web

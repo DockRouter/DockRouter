@@ -33,6 +33,18 @@ func (m *mockProxy) ServeHTTP(w http.ResponseWriter, r *http.Request, target str
 	return nil
 }
 
+// ServeHTTPFailover mirrors proxy.Proxy: on failure it writes nothing so the
+// router can retry another backend and render the final response itself.
+func (m *mockProxy) ServeHTTPFailover(w http.ResponseWriter, r *http.Request, target string) error {
+	m.lastTarget = target
+	if m.err != nil {
+		return m.err
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK from " + target))
+	return nil
+}
+
 func TestNewRouter(t *testing.T) {
 	table := NewTable()
 	proxy := &mockProxy{}

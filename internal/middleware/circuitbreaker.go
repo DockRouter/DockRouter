@@ -2,6 +2,8 @@
 package middleware
 
 import (
+	"bufio"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -70,6 +72,14 @@ func (r *responseWriterTracker) WriteHeader(statusCode int) {
 	r.status = statusCode
 	r.ResponseWriter.WriteHeader(statusCode)
 }
+
+func (r *responseWriterTracker) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return hijackThrough(r.ResponseWriter)
+}
+
+func (r *responseWriterTracker) Flush() { flushThrough(r.ResponseWriter) }
+
+func (r *responseWriterTracker) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 func (cb *CircuitBreaker) allow() bool {
 	cb.mu.Lock()

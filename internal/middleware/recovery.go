@@ -2,7 +2,9 @@
 package middleware
 
 import (
+	"bufio"
 	"fmt"
+	"net"
 	"net/http"
 	"runtime"
 )
@@ -22,6 +24,15 @@ func (w *recoveryResponseWriter) Write(b []byte) (int, error) {
 	w.headersSent = true
 	return w.ResponseWriter.Write(b)
 }
+
+func (w *recoveryResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	w.headersSent = true
+	return hijackThrough(w.ResponseWriter)
+}
+
+func (w *recoveryResponseWriter) Flush() { flushThrough(w.ResponseWriter) }
+
+func (w *recoveryResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // Recovery recovers from panics and returns a 500 error
 func Recovery(next http.Handler) http.Handler {

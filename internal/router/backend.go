@@ -51,6 +51,11 @@ type BackendPool struct {
 	rrCounter uint64
 }
 
+// PassiveEjectThreshold is how many consecutive proxy failures take a backend
+// out of rotation. Ejection is passive and reversible: the health checker (or a
+// later successful request) puts the backend back into rotation.
+const PassiveEjectThreshold = 3
+
 // BackendTarget represents a single backend server
 type BackendTarget struct {
 	Address     string
@@ -60,9 +65,10 @@ type BackendTarget struct {
 	LastCheck   time.Time
 
 	// Stats
-	requests      int64
-	failures      int64
-	activeConns   int64
+	requests    int64
+	failures    int64
+	activeConns int64
+	consecFail  int64
 }
 
 // NewBackendPool creates a new backend pool
@@ -90,6 +96,32 @@ func (p *BackendPool) Add(target *BackendTarget) {
 	}
 
 	p.Targets = append(p.Targets, target)
+}
+
+// Stats returns the request count, failure count and current active connection
+// count for the target.
+func (t *BackendTarget) Stats() (requests, failures, active int64) {
+	return atomic.LoadInt64(&t.requests),
+		atomic.LoadInt64(&t.failures),
+		atomic.LoadInt64(&t.activeConns)
+}
+
+// SetStrategy changes the load-balancing strategy for the pool.
+func (p *BackendPool) SetStrategy(s LoadBalanceStrategy) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.Strategy = s
+}
+
+// Snapshot returns a copy of the target list, safe to read without holding the
+// pool lock. The BackendTarget pointers are shared; only the slice is copied.
+func (p *BackendPool) Snapshot() []*BackendTarget {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	out := make([]*BackendTarget, len(p.Targets))
+	copy(out, p.Targets)
+	return out
 }
 
 // Remove removes a backend target by container ID
@@ -227,6 +259,7 @@ func (p *BackendPool) MarkHealthy(address string) {
 		if t.Address == address {
 			t.Healthy = true
 			t.LastCheck = time.Now()
+			atomic.StoreInt64(&t.consecFail, 0)
 			return
 		}
 	}
@@ -273,24 +306,45 @@ func (p *BackendPool) CompleteRequest(address string) {
 	}
 }
 
-// RecordFailure records a failure for a backend
-func (p *BackendPool) RecordFailure(address string) {
+// RecordSuccess records a successful proxy attempt, clearing the consecutive
+// failure counter so a backend that recovers stays in rotation.
+func (p *BackendPool) RecordSuccess(address string) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
 	for _, t := range p.Targets {
 		if t.Address == address {
-			atomic.AddInt64(&t.failures, 1)
+			atomic.StoreInt64(&t.consecFail, 0)
 			return
 		}
 	}
 }
 
-// HealthyCount returns number of healthy backends
-func (p *BackendPool) HealthyCount() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
+// RecordFailure records a failure for a backend. After PassiveEjectThreshold
+// consecutive failures the backend is taken out of rotation, but only if it is
+// not the last healthy one — ejecting every backend would turn a partial
+// outage into a total one. Ejection is undone by the health checker.
+func (p *BackendPool) RecordFailure(address string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
+	for _, t := range p.Targets {
+		if t.Address != address {
+			continue
+		}
+		atomic.AddInt64(&t.failures, 1)
+		fails := atomic.AddInt64(&t.consecFail, 1)
+
+		if fails >= PassiveEjectThreshold && t.Healthy && p.healthyCountLocked() > 1 {
+			t.Healthy = false
+			t.LastCheck = time.Now()
+		}
+		return
+	}
+}
+
+// healthyCountLocked counts healthy targets. Callers must hold p.mu.
+func (p *BackendPool) healthyCountLocked() int {
 	count := 0
 	for _, t := range p.Targets {
 		if t.Healthy {
@@ -298,6 +352,13 @@ func (p *BackendPool) HealthyCount() int {
 		}
 	}
 	return count
+}
+
+// HealthyCount returns number of healthy backends
+func (p *BackendPool) HealthyCount() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.healthyCountLocked()
 }
 
 // IsEmpty returns true if pool has no targets

@@ -20,12 +20,12 @@ import (
 
 // Manager handles certificate lifecycle
 type Manager struct {
-	mu          sync.RWMutex
-	certs       map[string]*tls.Certificate
-	store       *Store
-	acme        *ACMEClient
-	challenge   *ChallengeSolver
-	logger      Logger
+	mu           sync.RWMutex
+	certs        map[string]*tls.Certificate
+	store        *Store
+	acme         *ACMEClient
+	challenge    *ChallengeSolver
+	logger       Logger
 	provisioning sync.Map // domain -> struct{}, tracks in-flight provisioning
 }
 
@@ -66,6 +66,41 @@ func (m *Manager) LoadFromDisk() error {
 		)
 	}
 
+	return nil
+}
+
+// LoadManualCertificate loads an operator-supplied certificate and key pair
+// from disk and serves it for the given domain. This backs dr.tls=manual, where
+// certificates are mounted into the container rather than obtained via ACME.
+//
+// Reloading the same domain replaces the cached certificate, so a renewed file
+// is picked up on the next discovery sync.
+func (m *Manager) LoadManualCertificate(domain, certFile, keyFile string) error {
+	if domain == "" {
+		return fmt.Errorf("domain is required")
+	}
+	if certFile == "" || keyFile == "" {
+		return fmt.Errorf("both certificate and key file are required for domain %s", domain)
+	}
+
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return fmt.Errorf("load key pair for %s: %w", domain, err)
+	}
+
+	// Parse the leaf so expiry checks and SNI matching behave the same way they
+	// do for ACME-issued certificates.
+	if cert.Leaf == nil && len(cert.Certificate) > 0 {
+		if leaf, parseErr := x509.ParseCertificate(cert.Certificate[0]); parseErr == nil {
+			cert.Leaf = leaf
+		}
+	}
+
+	m.mu.Lock()
+	m.certs[domain] = &cert
+	m.mu.Unlock()
+
+	m.logger.Info("Loaded manual certificate", "domain", domain, "cert", certFile)
 	return nil
 }
 
@@ -118,8 +153,26 @@ func (m *Manager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, 
 	return fallback, nil
 }
 
-// EnsureCertificate provisions a certificate for a domain if needed
-func (m *Manager) EnsureCertificate(domain string) error {
+// dedupeDomains returns domain followed by altNames with duplicates and empty
+// entries removed, preserving order.
+func dedupeDomains(domain string, altNames []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(altNames)+1)
+
+	for _, d := range append([]string{domain}, altNames...) {
+		if d == "" || seen[d] {
+			continue
+		}
+		seen[d] = true
+		out = append(out, d)
+	}
+	return out
+}
+
+// EnsureCertificate provisions a certificate for a domain if needed. Additional
+// altNames are included as SAN entries on the same certificate and are served
+// for their own SNI names.
+func (m *Manager) EnsureCertificate(domain string, altNames ...string) error {
 	// Check if we already have a valid cert
 	m.mu.RLock()
 	cert, ok := m.certs[domain]
@@ -128,6 +181,7 @@ func (m *Manager) EnsureCertificate(domain string) error {
 	if ok {
 		// Check if valid
 		if !m.needsRenewal(cert) {
+			m.aliasCertificate(domain, altNames)
 			return nil
 		}
 	}
@@ -141,27 +195,52 @@ func (m *Manager) EnsureCertificate(domain string) error {
 				m.mu.Lock()
 				m.certs[domain] = cert
 				m.mu.Unlock()
+				m.aliasCertificate(domain, altNames)
 				return nil
 			}
 		}
 	}
 
 	// Provision new certificate via ACME
-	return m.provisionCertificate(domain)
+	return m.provisionCertificate(domain, altNames...)
+}
+
+// aliasCertificate makes the certificate stored under domain resolvable by each
+// of its SAN names, so SNI for a dr.tls.domains entry finds it.
+func (m *Manager) aliasCertificate(domain string, altNames []string) {
+	if len(altNames) == 0 {
+		return
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	cert, ok := m.certs[domain]
+	if !ok {
+		return
+	}
+	for _, alt := range altNames {
+		if alt != "" && alt != domain {
+			m.certs[alt] = cert
+		}
+	}
 }
 
 // provisionCertificate provisions a new certificate via ACME
-func (m *Manager) provisionCertificate(domain string) error {
+func (m *Manager) provisionCertificate(domain string, altNames ...string) error {
 	if m.acme == nil {
 		return fmt.Errorf("ACME client not initialized")
 	}
 
+	domains := dedupeDomains(domain, altNames)
+
 	m.logger.Info("Provisioning certificate",
 		"domain", domain,
+		"domains", domains,
 	)
 
-	// Create order
-	order, err := m.acme.RequestOrder([]string{domain})
+	// Create order covering every domain the certificate must serve
+	order, err := m.acme.RequestOrder(domains)
 	if err != nil {
 		return fmt.Errorf("failed to create order: %w", err)
 	}
@@ -179,8 +258,8 @@ func (m *Manager) provisionCertificate(domain string) error {
 		return fmt.Errorf("failed to generate key: %w", err)
 	}
 
-	// Generate CSR
-	csr, err := m.generateCSR(privKey, domain)
+	// Generate CSR covering every domain in the order
+	csr, err := m.generateCSR(privKey, domain, altNames...)
 	if err != nil {
 		return fmt.Errorf("failed to generate CSR: %w", err)
 	}
@@ -244,6 +323,9 @@ func (m *Manager) provisionCertificate(domain string) error {
 	m.mu.Lock()
 	m.certs[domain] = loadedCert
 	m.mu.Unlock()
+
+	// Serve the certificate for its SAN names too.
+	m.aliasCertificate(domain, altNames)
 
 	m.logger.Info("Certificate provisioned",
 		"domain", domain,
@@ -316,11 +398,13 @@ func (m *Manager) Renew(domain string) error {
 	return m.provisionCertificate(domain)
 }
 
-// generateCSR generates a Certificate Signing Request
-func (m *Manager) generateCSR(privKey *ecdsa.PrivateKey, domain string) ([]byte, error) {
+// generateCSR generates a Certificate Signing Request. Any altNames are
+// included as additional SAN entries so one certificate can cover every domain
+// listed in dr.tls.domains.
+func (m *Manager) generateCSR(privKey *ecdsa.PrivateKey, domain string, altNames ...string) ([]byte, error) {
 	template := &x509.CertificateRequest{
 		Subject:  pkix.Name{CommonName: domain},
-		DNSNames: []string{domain},
+		DNSNames: dedupeDomains(domain, altNames),
 	}
 
 	csr, err := x509.CreateCertificateRequest(rand.Reader, template, privKey)

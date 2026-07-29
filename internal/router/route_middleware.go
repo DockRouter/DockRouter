@@ -14,11 +14,22 @@ type RouteMiddlewareBuilder struct {
 	rateLimiters    sync.Map // routeID -> *middleware.RateLimiter
 	circuitBreakers sync.Map // routeID -> *middleware.CircuitBreaker
 	chainCache      sync.Map // routeID -> http.Handler
+
+	// trustedProxies are the CIDRs whose X-Forwarded-For/X-Real-IP headers the
+	// IP filter is allowed to believe. Without them a client behind a load
+	// balancer would be filtered on the balancer's address instead of its own.
+	trustedProxies []string
 }
 
 // NewRouteMiddlewareBuilder creates a new middleware builder
 func NewRouteMiddlewareBuilder() *RouteMiddlewareBuilder {
 	return &RouteMiddlewareBuilder{}
+}
+
+// SetTrustedProxies configures the proxy CIDRs used for client IP resolution.
+// Must be called before any chain is built.
+func (b *RouteMiddlewareBuilder) SetTrustedProxies(cidrs []string) {
+	b.trustedProxies = append([]string(nil), cidrs...)
 }
 
 // BuildChain builds a middleware chain for a route
@@ -71,6 +82,10 @@ func (b *RouteMiddlewareBuilder) BuildChain(route *Route, next http.Handler) htt
 	// Apply IP filtering
 	if len(route.MiddlewareConfig.IPWhitelist) > 0 || len(route.MiddlewareConfig.IPBlacklist) > 0 {
 		filter := middleware.NewIPFilter()
+		for _, cidr := range b.trustedProxies {
+			// An unparseable CIDR is rejected at config validation time.
+			_ = filter.AddTrustedProxy(cidr)
+		}
 		for _, network := range route.MiddlewareConfig.IPWhitelist {
 			filter.AddWhitelist(network.String())
 		}

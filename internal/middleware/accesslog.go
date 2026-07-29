@@ -2,7 +2,9 @@
 package middleware
 
 import (
+	"bufio"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -80,6 +82,14 @@ func (w *accessLogResponseWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
+func (w *accessLogResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return hijackThrough(w.ResponseWriter)
+}
+
+func (w *accessLogResponseWriter) Flush() { flushThrough(w.ResponseWriter) }
+
+func (w *accessLogResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
 type responseWriter struct {
 	http.ResponseWriter
 	status int
@@ -93,6 +103,14 @@ func (w *responseWriter) WriteHeader(status int) {
 	w.status = status
 	w.ResponseWriter.WriteHeader(status)
 }
+
+func (w *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return hijackThrough(w.ResponseWriter)
+}
+
+func (w *responseWriter) Flush() { flushThrough(w.ResponseWriter) }
+
+func (w *responseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // sanitizeLogField escapes carriage return and newline characters to prevent
 // log injection via malicious URL paths.

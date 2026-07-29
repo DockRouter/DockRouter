@@ -88,6 +88,13 @@ func (e *Engine) Start(ctx context.Context) error {
 	return nil
 }
 
+// IsRunning reports whether discovery has started successfully.
+func (e *Engine) IsRunning() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.running
+}
+
 // Sync performs a full sync of all containers
 func (e *Engine) Sync(ctx context.Context) error {
 	e.logger.Debug("Starting full container sync")

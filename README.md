@@ -11,7 +11,7 @@
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://golang.org/dl/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker)](https://hub.docker.com/r/dockrouter/dockrouter)
 [![GitHub Release](https://img.shields.io/github/v/release/DockRouter/dockrouter?include_prereleases)](https://github.com/DockRouter/dockrouter/releases)
-[![Coverage](https://img.shields.io/badge/Coverage-94.1%25-brightgreen)](.)
+[![Coverage](https://img.shields.io/badge/Coverage-92.2%25-brightgreen)](.)
 
 ---
 
@@ -42,8 +42,14 @@ docker run -d \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
   -v dockrouter-data:/data \
   -e DR_ACME_EMAIL=you@example.com \
+  -e DR_ADMIN_BIND=0.0.0.0 \
+  -e DR_ADMIN_USER=admin -e DR_ADMIN_PASS=change-me \
   dockrouter/dockrouter:latest
 ```
+
+> **Note:** the admin server binds to `127.0.0.1` by default, which inside a
+> container is unreachable from a published port. Set `DR_ADMIN_BIND=0.0.0.0` to
+> use the dashboard — and set `DR_ADMIN_USER`/`DR_ADMIN_PASS` when you do.
 
 ### Option 2: Docker Compose
 
@@ -114,6 +120,10 @@ services:
     environment:
       - DR_ACME_EMAIL=admin@example.com
       - DR_LOG_LEVEL=info
+      # Required for the published 9090 port to reach the dashboard
+      - DR_ADMIN_BIND=0.0.0.0
+      - DR_ADMIN_USER=admin
+      - DR_ADMIN_PASS=change-me
     labels:
       - "com.dockrouter.description=Ingress Router"
 
@@ -197,7 +207,12 @@ volumes:
 | `dr.healthcheck.path` | `/` | Health check path |
 | `dr.healthcheck.interval` | `10s` | Check interval |
 | `dr.healthcheck.timeout` | `5s` | Check timeout |
-| `dr.healthcheck.threshold` | `3` | Failures before unhealthy |
+| `dr.healthcheck.threshold` | `3` | Failures before the backend leaves rotation |
+| `dr.healthcheck.recovery` | `2` | Consecutive passes before it returns to rotation |
+
+Backends are health checked actively. A backend that starts failing is taken out
+of rotation and put back automatically once it recovers; the last healthy backend
+of a route is never ejected, so a partial outage cannot become a total one.
 
 ---
 
@@ -223,6 +238,8 @@ All configuration can be set via environment variables with `DR_` prefix:
 | `DR_ACME_STAGING` | `false` | Use staging server |
 | `DR_LOG_LEVEL` | `info` | Log level |
 | `DR_ACCESS_LOG` | `true` | Enable access logging |
+| `DR_DEFAULT_TLS` | `auto` | Default TLS mode for routes that set no `dr.tls` |
+| `DR_TRUSTED_IPS` | — | Proxy CIDRs whose forwarded-for headers are trusted |
 
 ### CLI Flags
 
@@ -266,25 +283,27 @@ docker run -e DR_ACME_EMAIL=admin@example.com dockrouter/dockrouter
 
 ### Manual TLS
 
+Point `dr.tls.cert` and `dr.tls.key` at the certificate and key files **as seen
+from inside the DockRouter container**. Both labels are required when
+`dr.tls: "manual"`.
+
 ```yaml
 labels:
   dr.enable: "true"
   dr.host: "api.example.com"
   dr.tls: "manual"
+  dr.tls.cert: "/certs/api.example.com/cert.pem"
+  dr.tls.key: "/certs/api.example.com/key.pem"
 ```
 
-Mount certificates:
+Mount the certificates into DockRouter:
 ```bash
 docker run -v /path/to/certs:/certs:ro dockrouter/dockrouter
 ```
 
-Certificate structure:
-```
-/certs/
-├── api.example.com/
-│   ├── cert.pem
-│   └── key.pem
-```
+Any extra domains listed in `dr.tls.domains` are served with the same pair, so a
+SAN certificate covers all of them. Manual TLS does not require `DR_ACME_EMAIL`;
+replacing the files on disk takes effect on the next discovery sync.
 
 ---
 
@@ -307,13 +326,23 @@ curl http://localhost:9090/metrics
 ```
 
 Available metrics:
-- `dockrouter_requests_total` - Total requests
-- `dockrouter_request_duration_seconds` - Request latency
-- `dockrouter_active_connections` - Active connections
-- `dockrouter_backend_requests_total` - Backend requests
-- `dockrouter_backend_errors_total` - Backend errors
-- `dockrouter_certificates_total` - Total certificates
-- `dockrouter_containers_total` - Discovered containers
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `dockrouter_http_requests_total` | counter | Total requests handled |
+| `dockrouter_http_errors_total` | counter | Responses with status >= 400 |
+| `dockrouter_http_request_duration_seconds` | histogram | Request latency |
+| `dockrouter_http_requests_active` | gauge | Requests in flight |
+| `dockrouter_active_connections` | gauge | Active backend connections |
+| `dockrouter_backend_requests_total` | gauge | Requests forwarded to backends |
+| `dockrouter_backend_errors_total` | gauge | Backend failures |
+| `dockrouter_routes_total` | gauge | Active routes |
+| `dockrouter_containers_total` | gauge | Discovered containers |
+| `dockrouter_certificates_total` | gauge | Loaded certificates |
+
+`/metrics` and `/api/v1/*` require admin credentials when `DR_ADMIN_USER` is set.
+`/health` and `/ready` are always unauthenticated so container and orchestrator
+probes work.
 
 ### Admin API
 
@@ -349,12 +378,16 @@ labels:
   dr.ipblacklist: "192.168.100.1/32"
 ```
 
-**Behind Load Balancers:** DockRouter supports `X-Forwarded-For`, `X-Real-IP`, and `CF-Connecting-IP` headers. Configure trusted proxies:
+**Behind Load Balancers:** IP filtering reads `X-Forwarded-For`, `X-Real-IP` and
+`CF-Connecting-IP`, but **only from proxies you explicitly trust** — otherwise any
+client could spoof its own address. List the balancer's CIDRs:
 
 ```bash
 # Set trusted proxy IPs (via environment variable)
 DR_TRUSTED_IPS=10.0.0.0/8,172.16.0.0/12
 ```
+
+Without `DR_TRUSTED_IPS`, filtering uses the peer address of the connection.
 
 ### CORS
 
@@ -452,10 +485,15 @@ docker run -d \
 
 ## 🏆 Code Quality
 
-- **Comprehensive forensic code review completed** — 86 findings identified and resolved
-- **Security hardened** — CSP headers, TLS 1.3 enforcement, CORS fixes, SSRF prevention
-- **Concurrency safety improved** — Race conditions eliminated across all critical paths
-- **All 11 packages pass** `go vet` and full test suite
+- **All 12 packages pass** `go vet`, the full test suite, and `go test -race ./...`
+- **Behaviour verified end-to-end** — `internal/integration/` drives a real proxy
+  through the production middleware chain to prove WebSocket upgrades, SSE
+  streaming, replica load balancing, scale-down, retry body replay and backend
+  health recovery actually work, rather than asserting against mocks
+- **Security hardened** — CSP and HSTS headers, TLS 1.3, CORS origin checks,
+  constant-time basic auth, unauthenticated surface limited to `/health` and `/ready`
+- **Responses are streamed, not buffered** — a slow or large upstream response
+  cannot pin memory in the router
 
 ---
 
@@ -463,29 +501,30 @@ docker run -d \
 
 ```
 dockrouter/
-├── cmd/dockrouter/          # Main application (88.1% coverage)
+├── cmd/dockrouter/          # Main application (84.1% coverage)
 │   ├── main.go              # Entry point
 │   └── dashboard/           # Admin dashboard
 ├── internal/
 │   ├── admin/               # Admin server (95.7% coverage)
 │   ├── config/              # Configuration (95.1% coverage)
-│   ├── discovery/           # Docker discovery (96.2% coverage)
-│   ├── health/              # Health checking (95.2% coverage)
+│   ├── discovery/           # Docker discovery (96.6% coverage)
+│   ├── health/              # Health checking (79.8% coverage)
 │   ├── log/                 # Logging (96.5% coverage)
 │   ├── metrics/             # Prometheus metrics (96.9% coverage)
-│   ├── middleware/          # HTTP middleware (96.2% coverage)
-│   ├── proxy/               # Reverse proxy (97.2% coverage)
-│   ├── router/              # Route management (97.2% coverage)
-│   └── tls/                 # TLS/ACME (93.6% coverage)
+│   ├── middleware/          # HTTP middleware (89.8% coverage)
+│   ├── proxy/               # Reverse proxy (96.0% coverage)
+│   ├── router/              # Route management (95.2% coverage)
+│   ├── tls/                 # TLS/ACME (90.0% coverage)
+│   └── integration/         # Cross-package behaviour tests
 ├── examples/                # Example configurations
-├── scripts/                 # Build scripts
+├── docs/                    # Additional documentation
 ├── Dockerfile               # Multi-stage Docker build
 ├── docker-compose.yml       # Quick start compose file
 ├── Makefile                 # Build automation
 └── README.md                # This file
 ```
 
-**Overall test coverage: 94.1% (targeting 85%+)**
+**Overall test coverage: 92.2%** (CI gate: 80%), verified with `go test -race ./...`
 
 ---
 

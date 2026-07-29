@@ -18,6 +18,9 @@ const (
 	targetKey   contextKey = "target"
 	errorKey    contextKey = "proxyError"
 	originalKey contextKey = "original"
+	// suppressKey marks a request whose failure must not produce an error page,
+	// so that the caller can retry against another backend instead.
+	suppressKey contextKey = "suppressErrorPage"
 )
 
 // Proxy handles reverse proxying to backend containers
@@ -58,8 +61,14 @@ func NewProxy(logger Logger) *Proxy {
 			p.setForwardedHeaders(req, original)
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-			errPtr := r.Context().Value(errorKey).(*error)
-			*errPtr = err
+			if errPtr, ok := r.Context().Value(errorKey).(*error); ok {
+				*errPtr = err
+			}
+			// When failover is possible the caller renders the final response,
+			// so writing an error page here would burn the ResponseWriter.
+			if suppress, ok := r.Context().Value(suppressKey).(bool); ok && suppress {
+				return
+			}
 			p.errorHandler(w, r, err)
 		},
 		ModifyResponse: func(resp *http.Response) error {
@@ -73,8 +82,20 @@ func NewProxy(logger Logger) *Proxy {
 	return p
 }
 
-// ServeHTTP proxies the request to the target backend
+// ServeHTTP proxies the request to the target backend. On failure it renders a
+// branded error page and also returns the error.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request, target string) error {
+	return p.serve(w, r, target, false)
+}
+
+// ServeHTTPFailover proxies the request but never writes an error response of
+// its own. On failure it returns the error and leaves w untouched, so the caller
+// can retry against a different backend or render its own error page.
+func (p *Proxy) ServeHTTPFailover(w http.ResponseWriter, r *http.Request, target string) error {
+	return p.serve(w, r, target, true)
+}
+
+func (p *Proxy) serve(w http.ResponseWriter, r *http.Request, target string, suppress bool) error {
 	// Route WebSocket requests through WebSocketProxy
 	if IsWebSocketRequest(r) {
 		return p.websocketProxy.ServeHTTP(w, r, target)
@@ -84,6 +105,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request, target string)
 	ctx := context.WithValue(r.Context(), targetKey, target)
 	ctx = context.WithValue(ctx, errorKey, &proxyErr)
 	ctx = context.WithValue(ctx, originalKey, r)
+	ctx = context.WithValue(ctx, suppressKey, suppress)
 
 	p.rp.ServeHTTP(w, r.WithContext(ctx))
 	return proxyErr

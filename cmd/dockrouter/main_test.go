@@ -755,21 +755,22 @@ func TestAppStartSetsComponents(t *testing.T) {
 		healthChecker: healthChecker,
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	// Start and immediately cancel
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		app.start(ctx)
-	}()
-
-	// Give start time to initialize components
-	time.Sleep(100 * time.Millisecond)
+	// start launches its listeners in their own goroutines and returns, so call
+	// it directly. Running it in a goroutine and sleeping would race with the
+	// assertion below rather than synchronise with it.
+	app.start(ctx)
 
 	// Verify components were set
 	if app.middlewareBuilder == nil {
 		t.Error("middlewareBuilder should be initialized")
 	}
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	app.shutdown(shutdownCtx)
 }
 
 func TestAppShutdownEmptyApp(t *testing.T) {

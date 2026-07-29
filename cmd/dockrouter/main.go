@@ -27,14 +27,19 @@ import (
 	tlspkg "github.com/DockRouter/dockrouter/internal/tls"
 )
 
-// Build-time variables (set via ldflags)
+// Build-time variables (set via ldflags).
+// The names must match the -X targets in the Makefile, Dockerfile and
+// .goreleaser.yml; a mismatched name is silently ignored by the linker.
 var (
 	version   = "dev"
 	buildTime = "unknown"
+	commit    = "unknown"
 )
 
-// healthCheckURL is the URL for health checks (can be overridden in tests)
-var healthCheckURL = "http://localhost:9090/api/v1/health"
+// healthCheckURL is the URL for health checks (can be overridden in tests).
+// It targets the unauthenticated /health probe rather than the admin API, so
+// the Docker HEALTHCHECK still works when DR_ADMIN_USER is set.
+var healthCheckURL = "http://localhost:9090/health"
 
 // healthCheckClient is a reusable HTTP client for health checks
 var healthCheckClient = &http.Client{
@@ -155,19 +160,39 @@ func (a *App) initialize() error {
 	// Initialize route table
 	a.routeTable = router.NewTable()
 
-	// Initialize health checker
+	// Initialize health checker and feed its results back into the route table
+	// so a backend that fails and later recovers returns to rotation.
 	a.healthChecker = health.NewChecker(10*time.Second, 5*time.Second)
+	a.healthChecker.OnStateChange(func(target string, state health.HealthState) {
+		healthy := state == health.StateHealthy || state == health.StateDegraded
+		a.routeTable.SetBackendHealth(target, healthy)
+		a.logger.Info("Backend health changed",
+			"target", target,
+			"state", state.String(),
+			"in_rotation", healthy,
+		)
+	})
 
 	// Initialize challenge solver
 	a.challengeSolver = tlspkg.NewChallengeSolver()
 
-	// Initialize TLS components
-	if a.config.ACMEEmail != "" {
+	// Initialize TLS components whenever TLS is enabled at all. The ACME client
+	// is optional: without an account email we can still serve certificates
+	// that were provisioned earlier or mounted manually, which is what
+	// dr.tls=manual relies on. An explicit ACME email enables TLS even when the
+	// global default is "off", because routes can opt in with dr.tls=auto.
+	if a.config.DefaultTLS != "off" || a.config.ACMEEmail != "" {
 		tlsStore := tlspkg.NewStore(a.config.DataDir)
-		acmeClient := tlspkg.NewACMEClient(a.config.GetACMEDirectoryURL(), a.config.ACMEEmail)
 
-		if err := acmeClient.Initialize(); err != nil {
-			a.logger.Warn("Failed to initialize ACME client", "error", err)
+		var acmeClient *tlspkg.ACMEClient
+		if a.config.ACMEEmail != "" {
+			acmeClient = tlspkg.NewACMEClient(a.config.GetACMEDirectoryURL(), a.config.ACMEEmail)
+			if err := acmeClient.Initialize(); err != nil {
+				a.logger.Warn("Failed to initialize ACME client", "error", err)
+			}
+		} else {
+			a.logger.Warn("No ACME email configured; automatic certificate issuance is disabled",
+				"hint", "set DR_ACME_EMAIL to enable Let's Encrypt")
 		}
 
 		a.tlsManager = tlspkg.NewManager(tlsStore, acmeClient, a.challengeSolver, a.logger)
@@ -203,6 +228,10 @@ func (a *App) initialize() error {
 func (a *App) start(ctx context.Context) {
 	// Initialize middleware builder before launching any goroutines
 	a.middlewareBuilder = router.NewRouteMiddlewareBuilder()
+	if len(a.config.TrustedIPs) > 0 {
+		a.middlewareBuilder.SetTrustedProxies(a.config.TrustedIPs)
+		a.logger.Info("Trusted proxies configured", "cidrs", a.config.TrustedIPs)
+	}
 
 	// Start health checker
 	go a.healthChecker.Start(ctx)
@@ -234,12 +263,14 @@ func (a *App) start(ctx context.Context) {
 
 	// Start HTTP server
 	a.httpServer = &http.Server{
-		Addr:            fmt.Sprintf(":%d", a.config.HTTPPort),
-		Handler:         httpHandler,
-		ReadTimeout:     30 * time.Second,
-		WriteTimeout:    30 * time.Second,
-		IdleTimeout:     120 * time.Second,
-		MaxHeaderBytes:  1 << 20, // 1MB
+		Addr:    fmt.Sprintf(":%d", a.config.HTTPPort),
+		Handler: httpHandler,
+		// No ReadTimeout/WriteTimeout: they are wall-clock deadlines for the
+		// whole exchange and would sever WebSocket and SSE connections. The
+		// header deadline still bounds slow-loris style attacks.
+		ReadHeaderTimeout: 30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20, // 1MB
 	}
 
 	go func() {
@@ -252,13 +283,15 @@ func (a *App) start(ctx context.Context) {
 	// Start HTTPS server
 	if a.tlsManager != nil {
 		a.httpsServer = &http.Server{
-			Addr:            fmt.Sprintf(":%d", a.config.HTTPSPort),
-			Handler:         coreHandler,
-			TLSConfig:       a.tlsManager.GetTLSConfig(),
-			ReadTimeout:     30 * time.Second,
-			WriteTimeout:    30 * time.Second,
-			IdleTimeout:     120 * time.Second,
-			MaxHeaderBytes:  1 << 20, // 1MB
+			Addr:      fmt.Sprintf(":%d", a.config.HTTPSPort),
+			Handler:   coreHandler,
+			TLSConfig: a.tlsManager.GetTLSConfig(),
+			// No ReadTimeout/WriteTimeout: they are wall-clock deadlines for the
+			// whole exchange and would sever WebSocket and SSE connections. The
+			// header deadline still bounds slow-loris style attacks.
+			ReadHeaderTimeout: 30 * time.Second,
+			IdleTimeout:       120 * time.Second,
+			MaxHeaderBytes:    1 << 20, // 1MB
 		}
 
 		go func() {
@@ -275,11 +308,11 @@ func (a *App) start(ctx context.Context) {
 		adminAddr := fmt.Sprintf("%s:%d", a.config.AdminBind, a.config.AdminPort)
 
 		a.adminServer = &http.Server{
-			Addr:            adminAddr,
-			Handler:         adminHandler,
-			ReadTimeout:     10 * time.Second,
-			WriteTimeout:    10 * time.Second,
-			MaxHeaderBytes:  1 << 20, // 1MB
+			Addr:           adminAddr,
+			Handler:        adminHandler,
+			ReadTimeout:    10 * time.Second,
+			WriteTimeout:   10 * time.Second,
+			MaxHeaderBytes: 1 << 20, // 1MB
 		}
 
 		go func() {
@@ -330,6 +363,11 @@ func (a *App) buildMiddlewareChain(handler http.Handler) http.Handler {
 		middleware.RequestID,
 	)
 
+	// Without this the collector stays empty and /metrics reports nothing.
+	if a.metrics != nil {
+		chain = middleware.Chain(chain, middleware.Metrics(a.metrics))
+	}
+
 	if a.config.AccessLog {
 		chain = middleware.Chain(chain, middleware.AccessLog)
 	}
@@ -357,7 +395,20 @@ func (a *App) buildHTTPHandler(handler http.Handler) http.Handler {
 				if err != nil {
 					host = r.Host
 				}
-				if a.routeTable != nil && a.routeTable.Match(host, r.URL.Path) != nil {
+
+				var route *router.Route
+				if a.routeTable != nil {
+					route = a.routeTable.Match(host, r.URL.Path)
+				}
+				if route == nil {
+					http.Error(w, "Bad Request", http.StatusBadRequest)
+					return
+				}
+
+				// Decided per route rather than globally: a route with
+				// dr.tls=off is served over plain HTTP instead of being
+				// redirected to a port that holds no certificate for it.
+				if a.shouldRedirectToHTTPS(route) {
 					target := fmt.Sprintf("https://%s%s", r.Host, r.URL.Path)
 					if r.URL.RawQuery != "" {
 						target += "?" + r.URL.RawQuery
@@ -365,13 +416,22 @@ func (a *App) buildHTTPHandler(handler http.Handler) http.Handler {
 					http.Redirect(w, r, target, http.StatusMovedPermanently)
 					return
 				}
-				http.Error(w, "Bad Request", http.StatusBadRequest)
-				return
 			}
 		}
 
 		handler.ServeHTTP(w, r)
 	})
+}
+
+// shouldRedirectToHTTPS reports whether a matched route should be redirected
+// from HTTP to HTTPS. The route's own TLS mode wins; only routes that never
+// declared one fall back to the global default.
+func (a *App) shouldRedirectToHTTPS(route *router.Route) bool {
+	mode := route.TLS.Mode
+	if mode == "" {
+		mode = a.config.DefaultTLS
+	}
+	return mode != "off"
 }
 
 func (a *App) buildAdminHandler() http.Handler {
@@ -386,6 +446,12 @@ func (a *App) buildAdminHandler() http.Handler {
 	mux.HandleFunc("/api/v1/metrics", a.handleMetrics)
 	mux.HandleFunc("/api/v1/config", a.handleConfig)
 
+	// Top-level monitoring endpoints. Probes and Prometheus scrapers expect
+	// these paths, not the versioned API ones.
+	mux.HandleFunc("/health", a.handleHealth)
+	mux.HandleFunc("/ready", a.handleReady)
+	mux.HandleFunc("/metrics", a.handleMetrics)
+
 	// Dashboard
 	dashboardRoot, _ := fs.Sub(dashboardFS, "dashboard")
 	fileServer := http.FileServer(http.FS(dashboardRoot))
@@ -398,7 +464,21 @@ func (a *App) buildAdminHandler() http.Handler {
 	// Apply auth if configured
 	if a.config.AdminUser != "" {
 		auth := admin.NewAuth(a.config.AdminUser, a.config.AdminPass)
-		return auth.Middleware(mux)
+		protected := auth.Middleware(mux)
+
+		// The liveness and readiness probes stay reachable without credentials:
+		// the Docker HEALTHCHECK and orchestrator probes do not authenticate,
+		// and a 401 would mark a healthy container as failed. They expose only
+		// liveness state. The admin API, including /api/v1/health, stays behind
+		// authentication.
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/health", "/ready":
+				mux.ServeHTTP(w, r)
+			default:
+				protected.ServeHTTP(w, r)
+			}
+		})
 	}
 
 	return mux
@@ -529,9 +609,82 @@ func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"status":"healthy"}`))
 }
 
+// handleReady reports whether DockRouter can actually serve traffic. It is
+// distinct from /health: the process can be alive while Docker discovery is
+// still down, in which case there are no routes to serve.
+func (a *App) handleReady(w http.ResponseWriter, r *http.Request) {
+	ready := true
+	reason := "ok"
+
+	if a.discoveryEngine != nil && !a.discoveryEngine.IsRunning() {
+		ready = false
+		reason = "docker discovery not running"
+	}
+
+	routes := 0
+	if a.routeTable != nil {
+		routes = a.routeTable.Count()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if !ready {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ready":  ready,
+		"reason": reason,
+		"routes": routes,
+	})
+}
+
 func (a *App) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
+	if a.metrics == nil {
+		return
+	}
+	a.sampleStateMetrics()
 	a.metrics.PrometheusFormat(w)
+}
+
+// sampleStateMetrics refreshes the metrics that describe current state rather
+// than accumulated events. These are cheaper to sample at scrape time than to
+// keep continuously in sync.
+func (a *App) sampleStateMetrics() {
+	if a.routeTable != nil {
+		a.metrics.SetGauge("routes_total", float64(a.routeTable.Count()))
+	}
+
+	containers := 0
+	if a.discoveryEngine != nil {
+		containers = len(a.discoveryEngine.GetContainers())
+	}
+	a.metrics.SetGauge("containers_total", float64(containers))
+
+	certificates := 0
+	if a.tlsManager != nil {
+		certificates = len(a.tlsManager.ListCertificates())
+	}
+	a.metrics.SetGauge("certificates_total", float64(certificates))
+
+	if a.routeTable == nil {
+		return
+	}
+
+	var requests, errors, active int64
+	for _, route := range a.routeTable.List() {
+		if route.Backend == nil {
+			continue
+		}
+		for _, target := range route.Backend.Snapshot() {
+			rq, fl, ac := target.Stats()
+			requests += rq
+			errors += fl
+			active += ac
+		}
+	}
+	a.metrics.SetGauge("backend_requests_total", float64(requests))
+	a.metrics.SetGauge("backend_errors_total", float64(errors))
+	a.metrics.SetGauge("active_connections", float64(active))
 }
 
 func (a *App) handleConfig(w http.ResponseWriter, r *http.Request) {
@@ -592,15 +745,15 @@ type appRouteSink struct {
 
 func (s *appRouteSink) AddRoute(info *discovery.ContainerInfo) {
 	pool := router.NewBackendPool(router.ParseLoadBalanceStrategy(info.Config.LoadBalance))
-	pool.Add(&router.BackendTarget{
+	target := &router.BackendTarget{
 		Address:     info.Address,
 		ContainerID: info.ID,
 		Weight:      info.Config.Weight,
 		Healthy:     info.Healthy,
-	})
+	}
 
 	route := &router.Route{
-		ID:            info.ID,
+		ID:            router.RouteKey(info.Config.Host, info.Config.Path),
 		Host:          info.Config.Host,
 		PathPrefix:    info.Config.Path,
 		Backend:       pool,
@@ -647,24 +800,63 @@ func (s *appRouteSink) AddRoute(info *discovery.ContainerInfo) {
 
 	if info.Config.TLS != "off" {
 		route.TLS = router.TLSConfig{
-			Mode:    info.Config.TLS,
-			Domains: info.Config.TLSDomains,
+			Mode:     info.Config.TLS,
+			Domains:  info.Config.TLSDomains,
+			CertFile: info.Config.TLSCertFile,
+			KeyFile:  info.Config.TLSKeyFile,
 		}
 
-		// Trigger certificate provisioning
-		if s.app.tlsManager != nil && info.Config.TLS == "auto" {
-			go func() {
-				if err := s.app.tlsManager.EnsureCertificate(info.Config.Host); err != nil {
-					s.app.logger.Error("Failed to provision certificate",
-						"domain", info.Config.Host,
-						"error", err,
-					)
+		if s.app.tlsManager != nil {
+			switch info.Config.TLS {
+			case "auto":
+				// Trigger certificate provisioning, covering any extra SAN
+				// domains declared with dr.tls.domains.
+				sans := append([]string(nil), info.Config.TLSDomains...)
+				go func() {
+					if err := s.app.tlsManager.EnsureCertificate(info.Config.Host, sans...); err != nil {
+						s.app.logger.Error("Failed to provision certificate",
+							"domain", info.Config.Host,
+							"sans", sans,
+							"error", err,
+						)
+					}
+				}()
+
+			case "manual":
+				// Load the operator-supplied certificate for this host and any
+				// additional SAN domains it is meant to serve.
+				domains := append([]string{info.Config.Host}, info.Config.TLSDomains...)
+				for _, domain := range domains {
+					if err := s.app.tlsManager.LoadManualCertificate(
+						domain, info.Config.TLSCertFile, info.Config.TLSKeyFile,
+					); err != nil {
+						s.app.logger.Error("Failed to load manual certificate",
+							"domain", domain,
+							"error", err,
+						)
+					}
 				}
-			}()
+			}
 		}
 	}
 
-	s.app.routeTable.Add(route)
+	// Upsert merges replicas that share a host and path into one backend pool,
+	// which is what lets the load-balancing strategies do their job.
+	s.app.routeTable.Upsert(route, target)
+
+	// Register the backend for active health checking so that a backend which
+	// fails and later recovers is returned to rotation.
+	if s.app.healthChecker != nil {
+		s.app.healthChecker.Register(info.Address, health.HealthCheck{
+			Target:    info.Address,
+			Path:      info.Config.HealthCheck.Path,
+			Interval:  info.Config.HealthCheck.Interval,
+			Timeout:   info.Config.HealthCheck.Timeout,
+			Threshold: info.Config.HealthCheck.Threshold,
+			Recovery:  info.Config.HealthCheck.Recovery,
+		})
+	}
+
 	s.app.logger.Info("Route added",
 		"container", info.Name,
 		"host", info.Config.Host,
@@ -673,8 +865,32 @@ func (s *appRouteSink) AddRoute(info *discovery.ContainerInfo) {
 }
 
 func (s *appRouteSink) RemoveRoute(containerID string) {
+	// Drop only this container's backend; sibling replicas keep serving.
 	s.app.routeTable.RemoveByContainer(containerID)
+
+	if s.app.healthChecker != nil {
+		for _, addr := range s.app.staleHealthTargets() {
+			s.app.healthChecker.Unregister(addr)
+		}
+	}
+
 	s.app.logger.Info("Route removed", "container_id", truncateID(containerID))
+}
+
+// staleHealthTargets returns health-check targets that no route serves anymore.
+func (a *App) staleHealthTargets() []string {
+	live := make(map[string]bool)
+	for _, addr := range a.routeTable.BackendAddresses() {
+		live[addr] = true
+	}
+
+	stale := make([]string, 0)
+	for _, addr := range a.healthChecker.Targets() {
+		if !live[addr] {
+			stale = append(stale, addr)
+		}
+	}
+	return stale
 }
 
 // truncateID safely truncates an ID to 12 characters for display
@@ -708,11 +924,27 @@ func doHealthCheck() {
 	os.Exit(0)
 }
 
+// healthCheckEndpoint resolves the admin health URL. It honours the same
+// environment variables the server reads, so a non-default admin port still
+// produces a working `dockrouter healthcheck`.
+func healthCheckEndpoint() string {
+	port := os.Getenv("DR_ADMIN_PORT")
+	if port == "" {
+		return healthCheckURL
+	}
+
+	host := os.Getenv("DR_ADMIN_BIND")
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "localhost"
+	}
+	return "http://" + net.JoinHostPort(host, port) + "/health"
+}
+
 // performHealthCheck performs the actual health check and returns an error if it fails
 // This is extracted for testability
 func performHealthCheck() error {
 	// Check admin endpoint health
-	resp, err := healthCheckClient.Get(healthCheckURL)
+	resp, err := healthCheckClient.Get(healthCheckEndpoint())
 	if err != nil {
 		return err
 	}
@@ -727,7 +959,8 @@ func performHealthCheck() error {
 // printVersion prints version information
 func printVersion() {
 	fmt.Printf("DockRouter %s\n", version)
-	fmt.Printf("  Built: %s\n", buildTime)
+	fmt.Printf("  Built:  %s\n", buildTime)
+	fmt.Printf("  Commit: %s\n", commit)
 	fmt.Println()
 	fmt.Println("Zero-dependency Docker-native ingress router")
 	fmt.Println("https://github.com/DockRouter/dockrouter")

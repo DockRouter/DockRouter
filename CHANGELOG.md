@@ -7,30 +7,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+An end-to-end audit found that several documented features did not work at
+runtime even though the unit test suite passed, because the tests asserted
+against mocks that mirrored the same faulty assumptions. The behaviour is now
+covered by `internal/integration/`, which drives a real proxy through the
+production middleware chain.
+
+### Fixed
+
+#### Request handling
+- **WebSocket proxying returned `503` and never upgraded.** Responses were
+  buffered through an `httptest.ResponseRecorder`, which does not implement
+  `http.Hijacker`, so the upgrade could not be performed. Responses are now
+  streamed directly to the client
+- **A WebSocket request marked its backend unhealthy**, letting any client take
+  a backend out of rotation by sending an `Upgrade` header
+- **Server-Sent Events and streaming responses were not delivered incrementally** —
+  the whole response was held in memory until the upstream finished, so a large
+  download consumed memory proportional to its size
+- **Five middleware `ResponseWriter` wrappers dropped `Hijacker` and `Flusher`**,
+  which broke upgrades and flushes for any route with middleware attached
+- `Timeout` middleware and the servers' `WriteTimeout` severed long-lived
+  connections; upgrades and event streams are now exempt and the servers use
+  `ReadHeaderTimeout` instead
+- **Retries lost the request body.** A bounded body (1 MB) is now buffered so a
+  failed attempt can be replayed against the next backend; larger bodies stream
+  to a single backend instead
+
+#### Routing and load balancing
+- **Replicas of the same service overwrote each other.** Routes were keyed so
+  that only the last container for a host and path received traffic, making the
+  round-robin, weighted, IP-hash and least-connections strategies unreachable.
+  Containers sharing a host and path now merge into one backend pool
+- **Stopping one replica removed the whole route**, taking healthy replicas
+  offline. A route is now dropped only when its last backend is gone
+- Failing backends were ejected permanently after a single error and the last
+  healthy backend could be ejected, turning a partial outage into a total one.
+  Ejection now requires consecutive failures and never removes the last backend
+
+#### Health checking
+- **The health checker was never connected.** `Register` was not called and
+  `MarkHealthy` had no callers, so a backend taken out of rotation never
+  returned. Check results now feed back into the route table, honouring
+  `dr.healthcheck.*` including the previously unused `recovery` setting
+
+#### TLS
+- **`dr.tls: manual` never loaded the certificate.** `dr.tls.cert` and
+  `dr.tls.key` were parsed and validated, then ignored
+- **HTTPS did not start at all without `DR_ACME_EMAIL`**, so manual certificates
+  could not be served. TLS now initialises whenever TLS is enabled, with ACME
+  as an optional component
+- **`dr.tls.domains` was ignored.** Additional SAN domains are now included in
+  the ACME order and CSR, and resolve to the same certificate over SNI
+- HTTP-to-HTTPS redirects were decided globally, so a route with `dr.tls: off`
+  was still redirected to a port holding no certificate for it
+
+#### Observability
+- **Prometheus metrics were never collected** — the metrics middleware was not
+  in the chain and `/metrics` returned an empty body
+- **`/health`, `/ready` and `/metrics` returned `404`**; they are now served
+- **The Docker `HEALTHCHECK` failed whenever `DR_ADMIN_USER` was set**, marking
+  healthy containers unhealthy. Probes are now unauthenticated while the admin
+  API stays protected
+- `dockrouter healthcheck` ignored `DR_ADMIN_PORT`/`DR_ADMIN_BIND`
+
+#### Configuration and packaging
+- **`DR_TRUSTED_IPS` was parsed but never reached the IP filter**, so forwarded
+  client addresses were not honoured behind a load balancer
+- **The Dockerfile passed `-X main.Version`/`main.BuildTime`/`main.Commit` while
+  the binary declares `version`/`buildTime`/`commit`**, so the linker silently
+  ignored them and published images always reported `dev`
+- The admin server binds to `127.0.0.1`, which is unreachable from a published
+  container port; `docker-compose.yml` and the README now set `DR_ADMIN_BIND`
+
+#### Concurrency
+- Fixed two data races in the test suite (an unsynchronised SSE mock writer and
+  a `time.Sleep`-synchronised assertion against `App.start`)
+
+### Added
+- `internal/integration/` — behaviour tests covering WebSocket upgrade and data
+  relay, SSE streaming latency, round-robin distribution across replicas,
+  scale-down, retry body replay, backend health recovery and manual TLS
+- `dockrouter version` now reports the build commit
+- `/ready` reports readiness separately from liveness, returning `503` while
+  Docker discovery is down
+
 ### Changed
-- Discovery package test coverage improved from 69.9% to 72.2%
-- CMD package test coverage improved from 72.4% to 77.1%
-- Router package test coverage improved from 96.7% to 97.9%
-- TLS package test coverage improved from 80.9% to 84.4%
-- Middleware package test coverage improved from 95.6% to 97.4%
-- Overall project coverage improved to 88.7%
-- Added comprehensive tests for GetContainerIP, Changed, handleEvent, printVersion, admin handlers, and weighted round robin edge cases
-- Added TLS tests for processAuthorization, provisionCertificate error paths, and challenge solver edge cases
-- Fixed duplicate test declarations in discovery package
-- Added TLS edge case tests: needsRenewal nil cases, GetCertificate validation, Load/SaveAccountKey errors
-- Added CMD edge case tests: handleRoutes with routes, handleStatus with components, admin handler auth tests
-- Added discovery HTTP request tests for context deadlines and timeouts
-- Added router backend tests: weighted round robin zero/negative weight edge cases
-- Added middleware tests: AddTrustedProxy edge cases, IP extraction with trusted proxies, rate limiter zero rate
-- Added discovery extended tests: GetContainerIP network priority, container state tests, network/subnet struct tests
-- Added router tests: getNode/putNode pool functions, radix tree edge cases, common prefix edge cases
-- Added TLS tests: provisionCertificate nil ACME, generateCSR, encodePrivateKey, Renew nil ACME
-- Added CMD tests: start with HTTP only, initialize with data dir, shutdown edge cases, certificates handler
-- Added discovery tests: doRequest/doStreamRequest error handling, Sync context cancellation, pollLoop/watchEvents cancellation
-- Added discovery tests: onContainerStop with existing container, ParseLabels edge cases
-- Added discovery tests: GetContainerName/GetContainerImage edge cases
-- Added TLS tests: Store round-trip, delete existing, list multiple, IsValid expired/almost-expired
-- Added TLS tests: ACME client error paths (fetchDirectory, fetchNonce, createOrGetAccount, RequestOrder, etc.)
+- Overall coverage 92.2%, verified with `go test -race ./...`
+- Repository cleaned of build artifacts, profiling output and scratch files;
+  `.gitignore` extended to keep them out
 
 ## [1.1.0] - 2024-03-18
 
@@ -46,54 +111,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Proxy package coverage increased to 95.7%
 - Example documentation with detailed README files
 - CI badge added to README
-
-## [1.0.0] - 2024-03-17
-  - `cmd/dockrouter`: 67.5% → 72.4% (+4.9%)
-  - `internal/proxy`: 89.6% → 95.7% (+6.1%)
-  - `internal/tls`: 80.3% → 80.9% (+0.6%)
-- New benchmark tests for router package (radix tree, backend pool selection)
-- WebSocket test coverage improvements with error handling tests
-- Rate limiter cleanup logic tests
-- CI badge added to README for build status visibility
-- Detailed README files for all examples:
-  - `examples/websocket/` - WebSocket proxying with sticky sessions
-  - `examples/rate-limiting/` - Rate limiting and circuit breaker patterns
-  - `examples/microservices/` - Complete microservices architecture
-- Dashboard embedded files tests
-- Proxy transport and error page tests
-- Extended poller tests for discovery package
-
-### Changed
-- WebSocket ServeHTTP coverage improved from 28.6% to 76.2%
-- Example documentation now includes architecture diagrams and testing instructions
-
-### Fixed
-- ACME thumbprint calculation now follows RFC 7638 (JWK Thumbprint)
-- Graceful shutdown now properly waits for active connections
-- Retry logic verified working in router package
-- `ParseLoadBalanceStrategy()` helper function for strategy parsing
-- `dr.weight` label support for weighted load balancing
-- X-Forwarded-For, X-Real-IP, CF-Connecting-IP header support in IP filtering
-- Trusted proxy configuration for IP filtering (`AddTrustedProxy()`)
-- Docker healthcheck command (`dockrouter healthcheck`)
-- Detailed version command (`dockrouter version`)
-- Performance benchmarks for load balancing and routing
-- Load balancing example in `examples/loadbalancing/`
-- Dependabot configuration for automated dependency updates
-- CI benchmark job for performance tracking
-
-### Fixed
-- ACME thumbprint calculation now follows RFC 7638 (JWK Thumbprint)
-- Graceful shutdown now properly waits for active connections
-- Retry logic verified working in router package
-
-### Changed
-- Refactored duplicate IP network parsing code into `parseIPNetworks()` helper
-- Updated linter configuration (`.golangci.yml`)
-- Improved code formatting across all files
-
-### Security
-- X-Forwarded-For header validation with trusted proxy support
 
 ## [1.0.0] - 2024-03-17
 
@@ -133,11 +150,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docker Compose examples
 - One-click install script
 - Multi-platform releases (Linux, macOS, Windows)
+- Docker healthcheck command (`dockrouter healthcheck`)
+- Version command (`dockrouter version`)
+
+#### Tooling and documentation
+- `ParseLoadBalanceStrategy()` helper and `dr.weight` label for weighted balancing
+- Trusted proxy configuration for IP filtering (`AddTrustedProxy()`)
+- Benchmarks for routing and load balancing
+- Per-example README files and a load balancing example
+- Dependabot configuration and a CI benchmark job
+
+### Fixed
+- ACME thumbprint calculation now follows RFC 7638 (JWK Thumbprint)
+- Graceful shutdown now waits for active connections
+
+### Changed
+- Refactored duplicate IP network parsing into a `parseIPNetworks()` helper
+- Updated linter configuration (`.golangci.yml`)
 
 ### Security
 - Constant-time bcrypt comparison for auth
+- X-Forwarded-For validation with trusted proxy support
 - No external dependencies (stdlib only)
 - Minimal attack surface with scratch-based Docker image
 
-[Unreleased]: https://github.com/DockRouter/dockrouter/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/DockRouter/dockrouter/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/DockRouter/dockrouter/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/DockRouter/dockrouter/releases/tag/v1.0.0

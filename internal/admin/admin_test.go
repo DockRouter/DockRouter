@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -598,15 +599,26 @@ func TestServerStartAndRequest(t *testing.T) {
 
 // SSE Handler with Flusher tests
 
-// mockFlusher implements http.ResponseWriter and http.Flusher
+// mockFlusher implements http.ResponseWriter and http.Flusher.
+//
+// The SSE handler runs in its own goroutine while the test inspects what it
+// wrote, so every field is guarded: an unsynchronized mock would report a data
+// race for the test's own bookkeeping rather than for anything in the handler.
 type mockFlusher struct {
+	mu         sync.Mutex
 	header     http.Header
 	body       strings.Builder
 	statusCode int
 	flushed    bool
 }
 
+func newMockFlusher() *mockFlusher {
+	return &mockFlusher{header: make(http.Header)}
+}
+
 func (m *mockFlusher) Header() http.Header {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.header == nil {
 		m.header = make(http.Header)
 	}
@@ -614,15 +626,40 @@ func (m *mockFlusher) Header() http.Header {
 }
 
 func (m *mockFlusher) Write(b []byte) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.body.Write(b)
 }
 
 func (m *mockFlusher) WriteHeader(statusCode int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.statusCode = statusCode
 }
 
 func (m *mockFlusher) Flush() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.flushed = true
+}
+
+// headerValue reads a header set by the handler goroutine.
+func (m *mockFlusher) headerValue(key string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.header.Get(key)
+}
+
+func (m *mockFlusher) bodyString() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.body.String()
+}
+
+func (m *mockFlusher) didFlush() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.flushed
 }
 
 func TestSSEHubHandlerWithFlusher(t *testing.T) {
@@ -632,7 +669,7 @@ func TestSSEHubHandlerWithFlusher(t *testing.T) {
 	handler := hub.Handler()
 
 	// Create mock flusher
-	w := &mockFlusher{}
+	w := newMockFlusher()
 	r := httptest.NewRequest(http.MethodGet, "/events", nil)
 	r.Header.Set("Accept", "text/event-stream")
 
@@ -649,17 +686,6 @@ func TestSSEHubHandlerWithFlusher(t *testing.T) {
 
 	// Give time to register
 	time.Sleep(20 * time.Millisecond)
-
-	// Verify headers were set
-	if w.Header().Get("Content-Type") != "text/event-stream" {
-		t.Errorf("Content-Type = %s, want text/event-stream", w.Header().Get("Content-Type"))
-	}
-	if w.Header().Get("Cache-Control") != "no-cache" {
-		t.Errorf("Cache-Control = %s, want no-cache", w.Header().Get("Cache-Control"))
-	}
-	if w.Header().Get("Connection") != "keep-alive" {
-		t.Errorf("Connection = %s, want keep-alive", w.Header().Get("Connection"))
-	}
 
 	// Send an event
 	hub.Send(Event{Type: "test-event"})
@@ -678,8 +704,24 @@ func TestSSEHubHandlerWithFlusher(t *testing.T) {
 		t.Error("Handler did not finish in time")
 	}
 
+	// Everything below runs after the handler goroutine has returned. Reading
+	// the recorded response earlier would race with the handler still writing
+	// to it, because http.ResponseWriter hands out its header map for the
+	// handler to mutate directly.
+
+	// Verify headers were set
+	if w.headerValue("Content-Type") != "text/event-stream" {
+		t.Errorf("Content-Type = %s, want text/event-stream", w.headerValue("Content-Type"))
+	}
+	if w.headerValue("Cache-Control") != "no-cache" {
+		t.Errorf("Cache-Control = %s, want no-cache", w.headerValue("Cache-Control"))
+	}
+	if w.headerValue("Connection") != "keep-alive" {
+		t.Errorf("Connection = %s, want keep-alive", w.headerValue("Connection"))
+	}
+
 	// Check body contains event data
-	body := w.body.String()
+	body := w.bodyString()
 	if !strings.Contains(body, "data: ") {
 		t.Errorf("Body should contain 'data: ', got %q", body)
 	}
@@ -688,7 +730,7 @@ func TestSSEHubHandlerWithFlusher(t *testing.T) {
 	}
 
 	// Verify flush was called
-	if !w.flushed {
+	if !w.didFlush() {
 		t.Error("Flush should have been called")
 	}
 }
@@ -744,7 +786,7 @@ func TestSSEHubHandlerContextCancel(t *testing.T) {
 
 	handler := hub.Handler()
 
-	w := &mockFlusher{}
+	w := newMockFlusher()
 	ctx, cancel := context.WithCancel(context.Background())
 	r := httptest.NewRequest(http.MethodGet, "/events", nil)
 	r = r.WithContext(ctx)

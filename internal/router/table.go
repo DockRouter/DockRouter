@@ -44,6 +44,91 @@ func (t *Table) Add(route *Route) {
 	t.addToTree(cloned)
 }
 
+// RouteKey is the identity of a route. Routes sharing a host and path prefix
+// are the same route served by a pool of backends, so this is what containers
+// are keyed by.
+func RouteKey(host, path string) string {
+	p := normalizePath(path)
+	if p == "" {
+		p = "/"
+	}
+	return normalizeHost(host) + "|" + p
+}
+
+// Upsert registers a backend target under the route's host and path prefix.
+//
+// Containers that share a host and path — replicas of the same service — are
+// merged into a single route whose pool holds every replica. This is what makes
+// the load-balancing strategies effective; keying routes by container ID would
+// make each replica overwrite the previous one.
+func (t *Table) Upsert(route *Route, target *BackendTarget) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	key := RouteKey(route.Host, route.PathPrefix)
+
+	// Copy-on-write: readers hold the old *Route outside the table lock, so the
+	// stored route is replaced rather than mutated in place.
+	updated := route.Clone()
+	updated.ID = key
+
+	if existing, ok := t.routes[key]; ok && existing.Backend != nil {
+		// Reuse the live pool so health state and connection counts survive.
+		updated.Backend = existing.Backend
+		updated.Backend.SetStrategy(route.Backend.Strategy)
+		t.removeFromTrees(existing)
+	} else if updated.Backend == nil {
+		updated.Backend = NewBackendPool(RoundRobin)
+	}
+
+	if target != nil {
+		updated.Backend.Add(target)
+	}
+
+	t.routes[key] = updated
+	t.addToTree(updated)
+}
+
+// SetBackendHealth updates the health of a backend address across every route
+// that serves it. Used by the health checker to put backends in and out of
+// rotation.
+func (t *Table) SetBackendHealth(address string, healthy bool) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	for _, route := range t.routes {
+		if route.Backend == nil {
+			continue
+		}
+		if healthy {
+			route.Backend.MarkHealthy(address)
+		} else {
+			route.Backend.MarkUnhealthy(address)
+		}
+	}
+}
+
+// BackendAddresses returns every distinct backend address in the table.
+func (t *Table) BackendAddresses() []string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	seen := make(map[string]bool)
+	addrs := make([]string, 0, len(t.routes))
+	for _, route := range t.routes {
+		if route.Backend == nil {
+			continue
+		}
+		for _, target := range route.Backend.Snapshot() {
+			if !seen[target.Address] {
+				seen[target.Address] = true
+				addrs = append(addrs, target.Address)
+			}
+		}
+	}
+	return addrs
+}
+
 // Remove deletes a route by ID
 func (t *Table) Remove(id string) {
 	t.mu.Lock()
@@ -55,16 +140,27 @@ func (t *Table) Remove(id string) {
 	}
 }
 
-// RemoveByContainer removes all routes for a container
+// RemoveByContainer removes a container's backend from every route it serves.
+//
+// A route is only dropped once its pool is empty, so stopping one replica of a
+// scaled service leaves the remaining replicas serving traffic.
 func (t *Table) RemoveByContainer(containerID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	for id, route := range t.routes {
-		if route.ContainerID == containerID {
-			t.removeFromTrees(route)
-			delete(t.routes, id)
+		if route.Backend != nil {
+			route.Backend.Remove(containerID)
+			if !route.Backend.IsEmpty() {
+				continue
+			}
 		}
+		// Either the pool drained or the route predates pooling; drop it.
+		if route.Backend == nil && route.ContainerID != containerID {
+			continue
+		}
+		t.removeFromTrees(route)
+		delete(t.routes, id)
 	}
 }
 

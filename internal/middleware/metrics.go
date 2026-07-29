@@ -2,6 +2,8 @@
 package middleware
 
 import (
+	"bufio"
+	"net"
 	"net/http"
 	"time"
 )
@@ -52,3 +54,11 @@ func (w *metricsResponseWriter) WriteHeader(status int) {
 	w.status = status
 	w.ResponseWriter.WriteHeader(status)
 }
+
+func (w *metricsResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return hijackThrough(w.ResponseWriter)
+}
+
+func (w *metricsResponseWriter) Flush() { flushThrough(w.ResponseWriter) }
+
+func (w *metricsResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }

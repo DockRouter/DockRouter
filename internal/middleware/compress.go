@@ -2,7 +2,9 @@
 package middleware
 
 import (
+	"bufio"
 	"compress/gzip"
+	"net"
 	"net/http"
 	"strings"
 )
@@ -12,6 +14,13 @@ func Compress(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Check if client accepts gzip
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Never compress a protocol upgrade or an event stream: gzip framing
+		// would corrupt a WebSocket handshake and stall SSE delivery.
+		if isLongLived(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -34,6 +43,12 @@ type gzipResponseWriter struct {
 	wroteHeader bool
 }
 
+func (w *gzipResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return hijackThrough(w.ResponseWriter)
+}
+
+func (w *gzipResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
 func (w *gzipResponseWriter) init() {
 	if w.writer == nil {
 		w.ResponseWriter.Header().Del("Content-Length")
@@ -43,11 +58,11 @@ func (w *gzipResponseWriter) init() {
 }
 
 var compressibleTypes = map[string]bool{
-	"text/":                       true,
-	"application/json":            true,
-	"application/javascript":      true,
-	"application/xml":             true,
-	"application/svg":             true,
+	"text/":                             true,
+	"application/json":                  true,
+	"application/javascript":            true,
+	"application/xml":                   true,
+	"application/svg":                   true,
 	"application/x-www-form-urlencoded": true,
 }
 

@@ -4,7 +4,6 @@ package router
 import (
 	"html"
 	"net/http"
-	"net/http/httptest"
 	"strconv"
 	"strings"
 )
@@ -21,6 +20,13 @@ type Router struct {
 // Proxy is the interface for proxying requests
 type Proxy interface {
 	ServeHTTP(w http.ResponseWriter, r *http.Request, target string) error
+}
+
+// FailoverProxy is an optional interface a Proxy may implement to report a
+// failure without writing anything to the ResponseWriter. When available the
+// router uses it so a failed attempt can be retried on another backend.
+type FailoverProxy interface {
+	ServeHTTPFailover(w http.ResponseWriter, r *http.Request, target string) error
 }
 
 // Logger interface for router
@@ -100,31 +106,55 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 // createProxyHandler creates a handler that proxies to backends with retry logic.
-// Each attempt is buffered via httptest.NewRecorder so that a failed proxy call
-// does not consume the real ResponseWriter, allowing genuine failover to the
-// next backend.
+//
+// The response is streamed straight to the client rather than buffered, so
+// WebSocket upgrades, SSE and large downloads work and a slow backend cannot
+// pin an entire response in memory. Failover is therefore only possible while
+// nothing has been written yet; failoverWriter tracks that boundary.
 func (r *Router) createProxyHandler(route *Route, host, path string, maxRetries int) http.Handler {
+	// Prefer the failover-aware call so a failed attempt leaves the writer clean.
+	serve := r.proxy.ServeHTTP
+	if fp, ok := r.proxy.(FailoverProxy); ok {
+		serve = fp.ServeHTTPFailover
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		// Try backends with retry logic
+		fw := &failoverWriter{ResponseWriter: w}
+
+		// Only buffer a body when failover could actually happen: a single
+		// backend has nothing to fail over to.
+		canRetryBody := true
+		if maxRetries > 1 && route.Backend.HealthyCount() > 1 {
+			req, canRetryBody = makeReplayable(req)
+		}
+
 		triedBackends := make(map[string]bool)
+		var lastErr error
 
 		for attempt := 0; attempt < maxRetries; attempt++ {
-			// Get backend from pool
 			backend := route.Backend.Select(req.RemoteAddr)
 			if backend == nil {
 				break
 			}
-
-			// Skip if already tried
 			if triedBackends[backend.Address] {
 				break
 			}
 			triedBackends[backend.Address] = true
 
-			// Record request (increments active connections)
+			// Rewind the body for retries so the next backend sees the full request.
+			attemptReq := req
+			if attempt > 0 && req.GetBody != nil {
+				body, err := req.GetBody()
+				if err != nil {
+					r.logger.Warn("Cannot rewind request body for retry", "error", err)
+					break
+				}
+				attemptReq = req.Clone(req.Context())
+				attemptReq.Body = body
+			}
+
 			route.Backend.RecordRequest(backend.Address)
 
-			// Log the match
 			r.logger.Debug("Route matched",
 				"host", host,
 				"path", path,
@@ -133,41 +163,53 @@ func (r *Router) createProxyHandler(route *Route, host, path string, maxRetries 
 				"attempt", attempt+1,
 			)
 
-			// Buffer the response so the real writer stays clean on failure
-			rec := httptest.NewRecorder()
+			err := serve(fw, attemptReq, backend.Address)
 
-			// Proxy the request into the recorder
-			err := r.proxy.ServeHTTP(rec, req, backend.Address)
-
-			// Decrement active connections
 			route.Backend.CompleteRequest(backend.Address)
 
 			if err == nil {
-				// Success: flush buffered response to the real writer
-				for k, vv := range rec.Header() {
-					for _, v := range vv {
-						w.Header().Add(k, v)
-					}
-				}
-				w.WriteHeader(rec.Code)
-				rec.Body.WriteTo(w)
+				route.Backend.RecordSuccess(backend.Address)
 				return
 			}
 
-			// Record failure
-			r.logger.Warn("Proxy error",
+			lastErr = err
+			route.Backend.RecordFailure(backend.Address)
+
+			// The client has already seen part of this response (or the
+			// connection was hijacked); retrying would corrupt it.
+			if fw.committed {
+				r.logger.Warn("Proxy error after response started",
+					"error", err,
+					"backend", backend.Address,
+					"path", path,
+				)
+				return
+			}
+
+			r.logger.Warn("Proxy error, failing over",
 				"error", err,
 				"backend", backend.Address,
 				"path", path,
 				"attempt", attempt+1,
 			)
-			route.Backend.RecordFailure(backend.Address)
-			route.Backend.MarkUnhealthy(backend.Address)
-			// Continue to next backend attempt
+
+			if !canRetryBody {
+				break
+			}
 		}
 
-		// No backends were available to try (all attempts failed)
-		r.handleNoBackend(w, req, route)
+		// Nothing reached the client and every backend attempt failed.
+		if fw.committed {
+			return
+		}
+		if lastErr != nil {
+			r.logger.Warn("All backend attempts failed",
+				"host", route.Host,
+				"path", route.PathPrefix,
+				"error", lastErr,
+			)
+		}
+		r.handleNoBackend(fw, req, route)
 	})
 }
 
@@ -244,4 +286,3 @@ func buildErrorPage(code int, title, message, requestID string) string {
 </body>
 </html>`
 }
-

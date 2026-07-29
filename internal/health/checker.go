@@ -13,6 +13,11 @@ type Checker struct {
 	checks   map[string]*HealthCheck
 	interval time.Duration
 	timeout  time.Duration
+
+	// onStateChange is invoked whenever a target's state changes. It is what
+	// connects check results back to the route table; without it the checker
+	// would observe failures but never act on them.
+	onStateChange func(target string, state HealthState)
 }
 
 // HealthCheck represents a single backend health check
@@ -38,11 +43,47 @@ func NewChecker(interval, timeout time.Duration) *Checker {
 	}
 }
 
-// Register adds a backend for health checking
+// OnStateChange registers a callback invoked when a target's health state
+// changes. Must be set before Start.
+func (c *Checker) OnStateChange(fn func(target string, state HealthState)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onStateChange = fn
+}
+
+// Register adds a backend for health checking. Re-registering an existing
+// target keeps its accumulated state so a config refresh does not reset it.
 func (c *Checker) Register(target string, config HealthCheck) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if existing, ok := c.checks[target]; ok {
+		existing.Path = config.Path
+		existing.Type = config.Type
+		existing.Interval = config.Interval
+		existing.Timeout = config.Timeout
+		existing.Threshold = config.Threshold
+		existing.Recovery = config.Recovery
+		return
+	}
+
+	config.Target = target
+	if config.Timeout <= 0 {
+		config.Timeout = c.timeout
+	}
 	c.checks[target] = &config
+}
+
+// Targets returns every registered health check target.
+func (c *Checker) Targets() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	targets := make([]string, 0, len(c.checks))
+	for target := range c.checks {
+		targets = append(targets, target)
+	}
+	return targets
 }
 
 // Unregister removes a backend from health checking
@@ -101,7 +142,7 @@ func (c *Checker) checkOne(target string, check *HealthCheck) {
 	}
 
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	previous := check.State
 
 	if healthy {
 		check.ConsecFail = 0
@@ -134,6 +175,15 @@ func (c *Checker) checkOne(target string, check *HealthCheck) {
 		} else if check.ConsecFail >= check.Threshold/2 {
 			check.State = StateDegraded
 		}
+	}
+
+	current := check.State
+	notify := c.onStateChange
+	c.mu.Unlock()
+
+	// Notify outside the lock: the callback reaches into the route table.
+	if notify != nil && current != previous {
+		notify(target, current)
 	}
 }
 

@@ -21,7 +21,7 @@ ARG COMMIT=unknown
 
 # Build static binary with optimizations
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w -X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME} -X main.Commit=${COMMIT}" \
+    -ldflags="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME} -X main.commit=${COMMIT}" \
     -o /dockrouter ./cmd/dockrouter
 
 # Final stage - minimal scratch image
