@@ -95,3 +95,18 @@ node_modules/
 
 # Temp files
 _commit_msg.txt
+.commit_msg.txt
+commit_msg.txt
+/tmp/
+
+# Profiling output
+*.prof
+*.pprof
+
+# Scratch coverage profiles (CI writes coverage.out, which *.out already covers)
+coverage*.out
+overall_coverage.out
+coverage_functions.txt
+
+# Windows artifacts
+nul
