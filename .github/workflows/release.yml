@@ -57,8 +57,15 @@ jobs:
         with:
           context: .
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/dockrouter:${{ steps.tag.outputs.VERSION }}
             ${{ secrets.DOCKERHUB_USERNAME }}/dockrouter:latest
+          # Without these the Dockerfile ARG defaults win and the published
+          # image reports its version as "dev".
+          build-args: |
+            VERSION=${{ steps.tag.outputs.VERSION }}
+            BUILD_TIME=${{ github.event.repository.updated_at }}
+            COMMIT=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

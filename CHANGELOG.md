@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-29
+
 An end-to-end audit found that several documented features did not work at
 runtime even though the unit test suite passed, because the tests asserted
 against mocks that mirrored the same faulty assumptions. The behaviour is now
@@ -97,7 +99,7 @@ production middleware chain.
 - Repository cleaned of build artifacts, profiling output and scratch files;
   `.gitignore` extended to keep them out
 
-## [1.1.0] - 2024-03-18
+## [1.1.0] - 2026-03-18
 
 ### Added
 - Router radix tree optimization with sync.Pool (reduced allocations from 18 to 16 allocs/op)
@@ -112,7 +114,7 @@ production middleware chain.
 - Example documentation with detailed README files
 - CI badge added to README
 
-## [1.0.0] - 2024-03-17
+## [1.0.0] - 2026-03-17
 
 ### Added
 
@@ -174,6 +176,7 @@ production middleware chain.
 - No external dependencies (stdlib only)
 - Minimal attack surface with scratch-based Docker image
 
-[Unreleased]: https://github.com/DockRouter/dockrouter/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/DockRouter/dockrouter/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/DockRouter/dockrouter/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/DockRouter/dockrouter/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/DockRouter/dockrouter/releases/tag/v1.0.0

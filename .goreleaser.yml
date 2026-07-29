@@ -1,3 +1,7 @@
+# GoReleaser v2 configuration.
+# The release workflow pins `version: latest`, which rejects v0/v1 configs.
+version: 2
+
 project_name: dockrouter
 
 before:
@@ -19,18 +23,21 @@ builds:
       - -s -w
       - -X main.version={{.Version}}
       - -X main.buildTime={{.Date}}
+      - -X main.commit={{.Commit}}
     main: ./cmd/dockrouter
 
 archives:
-  - format: tar.gz
+  # The dashboard is embedded in the binary via go:embed, so it is not shipped
+  # as a separate archive entry.
+  - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
     files:
       - README.md
       - LICENSE
-      - dashboard/**/*
+      - CHANGELOG.md
 
 checksum:
   name_template: 'checksums.txt'
