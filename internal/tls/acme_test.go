@@ -91,8 +91,8 @@ func TestBase64URLEncode(t *testing.T) {
 func TestBase64URLEncodeRoundTrip(t *testing.T) {
 	testData := [][]byte{
 		[]byte("hello world"),
-		[]byte{0, 1, 2, 3, 4, 5},
-		[]byte{255, 254, 253},
+		{0, 1, 2, 3, 4, 5},
+		{255, 254, 253},
 		make([]byte, 256),
 	}
 

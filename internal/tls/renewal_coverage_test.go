@@ -45,7 +45,6 @@ func buildExpiringCertPEM(t *testing.T, domain string) (certPEM, keyPEM []byte) 
 	return
 }
 
-
 // TestCheckRenewalsSuccessfulRenewal tests checkRenewals when Renew succeeds.
 func TestCheckRenewalsSuccessfulRenewal(t *testing.T) {
 	ca, err := newMiniCA()

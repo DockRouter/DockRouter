@@ -7,12 +7,12 @@ import (
 
 func TestRouteClone(t *testing.T) {
 	original := &Route{
-		ID:         "test",
-		Host:       "example.com",
-		PathPrefix: "/",
+		ID:          "test",
+		Host:        "example.com",
+		PathPrefix:  "/",
 		Middlewares: []string{"m1", "m2"},
-		Labels:     map[string]string{"key": "value"},
-		TLS:        TLSConfig{Domains: []string{"example.com"}},
+		Labels:      map[string]string{"key": "value"},
+		TLS:         TLSConfig{Domains: []string{"example.com"}},
 		MiddlewareConfig: MiddlewareConfig{
 			CORS: CORSConfig{Origins: []string{"https://example.com"}},
 		},

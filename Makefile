@@ -75,7 +75,9 @@ bench:
 ## lint: Run linters
 lint:
 	@echo "Running linters..."
-	@which golangci-lint > /dev/null || go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@# .golangci.yml uses the v2 schema, which only the /v2 module path provides.
+	@# Installing from the old path pulls a v1 binary that rejects the config.
+	@which golangci-lint > /dev/null || go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 	golangci-lint run ./...
 
 ## staticcheck: Run staticcheck

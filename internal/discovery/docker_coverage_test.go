@@ -179,8 +179,8 @@ func TestEventsStreamWithUnixMock(t *testing.T) {
 	defer cancel()
 
 	events, err := client.EventsStream(ctx, map[string]string{
-		"type":   "container",
-		"event":  "start,stop",
+		"type":  "container",
+		"event": "start,stop",
 	})
 	if err != nil {
 		t.Fatalf("EventsStream error: %v", err)
@@ -284,11 +284,11 @@ func TestValidateContainerID(t *testing.T) {
 		{"ABC123DEF456", true},
 		{"a1b2c3d4e5f6", true},
 		{"", false},
-		{"abc-123", false},  // dash not allowed
-		{"abc_123", false},  // underscore not allowed
-		{"abc.123", false},  // dot not allowed
-		{"abc 123", false},  // space not allowed
-		{"abc/123", false},  // slash not allowed
+		{"abc-123", false}, // dash not allowed
+		{"abc_123", false}, // underscore not allowed
+		{"abc.123", false}, // dot not allowed
+		{"abc 123", false}, // space not allowed
+		{"abc/123", false}, // slash not allowed
 	}
 
 	for _, tt := range tests {

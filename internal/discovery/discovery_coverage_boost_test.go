@@ -276,7 +276,7 @@ func TestParseLabelsEveryField(t *testing.T) {
 		"dr.ipblacklist":           "10.0.0.1",
 		"dr.retry":                 "3",
 		"dr.circuitbreaker":        "5/30s",
-		"dr.middlewares":            "ratelimit, compress, cors",
+		"dr.middlewares":           "ratelimit, compress, cors",
 		"dr.healthcheck.path":      "/health",
 		"dr.healthcheck.interval":  "15s",
 		"dr.healthcheck.timeout":   "3s",

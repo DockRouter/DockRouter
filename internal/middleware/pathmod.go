@@ -17,9 +17,7 @@ func StripPrefix(prefix string) Middleware {
 			}
 			r.URL.Path = r.URL.Path[len(prefix):]
 			if r.URL.RawPath != "" {
-				if strings.HasPrefix(r.URL.RawPath, prefix) {
-					r.URL.RawPath = r.URL.RawPath[len(prefix):]
-				}
+				r.URL.RawPath = strings.TrimPrefix(r.URL.RawPath, prefix)
 			}
 			if r.URL.Path == "" {
 				r.URL.Path = "/"

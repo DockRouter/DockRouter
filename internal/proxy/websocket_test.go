@@ -695,4 +695,3 @@ func TestWebSocketCopyDataLargeBuffer(t *testing.T) {
 		t.Error("Timeout")
 	}
 }
-

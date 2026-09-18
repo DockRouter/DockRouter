@@ -155,13 +155,13 @@ func TestAppInitializeWithACMEEmail(t *testing.T) {
 	app := &App{
 		logger: logger,
 		config: &config.Config{
-			HTTPPort:    0,
-			HTTPSPort:   0,
-			ACMEEmail:   "test@example.com",
-			DataDir:     t.TempDir(),
-			AccessLog:   false,
-			LogLevel:    "info",
-			DefaultTLS:  "off",
+			HTTPPort:   0,
+			HTTPSPort:  0,
+			ACMEEmail:  "test@example.com",
+			DataDir:    t.TempDir(),
+			AccessLog:  false,
+			LogLevel:   "info",
+			DefaultTLS: "off",
 		},
 		startTime: time.Now(),
 	}

@@ -183,7 +183,7 @@ func TestPollerStartIntegration(t *testing.T) {
 	<-ctx.Done()
 
 	// Drain any remaining items and wait for channel to close
-	drainLoop:
+drainLoop:
 	for {
 		select {
 		case _, ok := <-ch:

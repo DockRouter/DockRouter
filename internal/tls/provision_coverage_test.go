@@ -106,7 +106,6 @@ func TestProvisionCertificateSaveFail(t *testing.T) {
 	}
 }
 
-
 // TestProvisionCertificatePollOrderFail tests the PollOrder failure path when cert URL is empty.
 func TestProvisionCertificatePollOrderFail(t *testing.T) {
 	var server *httptest.Server
@@ -256,4 +255,3 @@ func TestShouldRenewBadPEM(t *testing.T) {
 		t.Error("ShouldRenew should return true for invalid PEM (cannot determine expiry)")
 	}
 }
-

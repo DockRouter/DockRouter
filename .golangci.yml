@@ -1,89 +1,110 @@
-run:
-  timeout: 5m
+# golangci-lint configuration.
+#
+# This is the v2 schema. golangci-lint v1 reached end of life and refuses to
+# run nothing but v1 configs, while v2 refuses to run a v1 config at all, so the
+# `version` key below is load-bearing: without it `golangci-lint run` fails with
+# "unsupported version of the configuration" before a single file is inspected.
+# The Makefile pins the matching v2 module path.
+version: "2"
 
 linters:
+  # errcheck, govet, ineffassign, staticcheck and unused are enabled by
+  # default in v2; gosimple was folded into staticcheck. Only the extras are
+  # listed here.
+  enable:
+    - dupl
+    - goconst
+    - gocyclo
+    - misspell
+
+  settings:
+    dupl:
+      threshold: 100
+    errcheck:
+      check-type-assertions: false
+      check-blank: false
+      exclude-functions:
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - fmt.Fprint
+        - fmt.Printf
+        - fmt.Println
+        - fmt.Print
+        - fmt.Sprint
+        - (*net/http.ResponseWriter).Write
+        - (*encoding/json.Encoder).Encode
+        - (*encoding/gob.Encoder).Encode
+    goconst:
+      min-len: 4
+      min-occurrences: 6
+    gocyclo:
+      min-complexity: 20
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # Tests trade duplication and error handling for readability.
+      - path: _test\.go
+        linters:
+          - dupl
+          - errcheck
+          - goconst
+          - gocyclo
+          - staticcheck
+          - unused
+      # Docker API constants
+      - source: '"container"'
+        linters:
+          - goconst
+      # Allow unchecked writes in HTTP handlers
+      - source: w\.Write\(
+        linters:
+          - errcheck
+      - source: \.Encode\(
+        linters:
+          - errcheck
+      - source: Shutdown\(
+        linters:
+          - errcheck
+      - source: SetDeadline\(
+        linters:
+          - errcheck
+      - source: rand\.Read\(
+        linters:
+          - errcheck
+      - source: SaveMeta\(
+        linters:
+          - errcheck
+      - source: MkdirAll\(
+        linters:
+          - errcheck
+      - source: Execute\(
+        linters:
+          - errcheck
+      - source: AddWhitelist\(|AddBlacklist\(
+        linters:
+          - errcheck
+      # Config validation is complex by nature
+      - path: internal/config/
+        linters:
+          - gocyclo
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+
+formatters:
   enable:
     - gofmt
     - goimports
-    - govet
-    - errcheck
-    - staticcheck
-    - ineffassign
-    - typecheck
-    - gosimple
-    - goconst
-    - gocyclo
-    - dupl
-    - misspell
-
-linters-settings:
-  gocyclo:
-    min-complexity: 20
-  goconst:
-    min-len: 4
-    min-occurrences: 6
-  dupl:
-    threshold: 100
-  errcheck:
-    check-type-assertions: false
-    check-blank: false
-    exclude-functions:
-      - fmt.Fprintf
-      - fmt.Fprintf
-      - fmt.Fprintln
-      - fmt.Fprint
-      - fmt.Printf
-      - fmt.Println
-      - fmt.Print
-      - fmt.Sprint
-      - (*net/http.ResponseWriter).Write
-      - (*encoding/json.Encoder).Encode
-      - (*encoding/gob.Encoder).Encode
-
-issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - dupl
-        - goconst
-        - errcheck
-        - unused
-        - staticcheck
-        - gocyclo
-        - gofmt
-    # Docker API constants
-    - source: "\"container\""
-      linters:
-        - goconst
-    # Allow unchecked writes in HTTP handlers
-    - source: "w\\.Write\\("
-      linters:
-        - errcheck
-    - source: "\\.Encode\\("
-      linters:
-        - errcheck
-    - source: "Shutdown\\("
-      linters:
-        - errcheck
-    - source: "SetDeadline\\("
-      linters:
-        - errcheck
-    - source: "rand\\.Read\\("
-      linters:
-        - errcheck
-    - source: "SaveMeta\\("
-      linters:
-        - errcheck
-    - source: "MkdirAll\\("
-      linters:
-        - errcheck
-    - source: "Execute\\("
-      linters:
-        - errcheck
-    - source: "AddWhitelist\\(|AddBlacklist\\("
-      linters:
-        - errcheck
-    # Config validation is complex by nature
-    - path: internal/config/
-      linters:
-        - gocyclo
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

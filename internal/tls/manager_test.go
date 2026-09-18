@@ -1114,10 +1114,10 @@ func TestManagerLoadFromDiskError(t *testing.T) {
 // MockACMEClient for testing provisionCertificate
 type MockACMEClient struct {
 	ACMEClient
-	RequestOrderFunc      func(domains []string) (*ACMEOrder, error)
-	ProcessAuthFunc       func(authURL string) error
-	FinalizeOrderFunc     func(order *ACMEOrder, csr []byte) error
-	DownloadCertFunc      func(url string) ([]byte, error)
+	RequestOrderFunc  func(domains []string) (*ACMEOrder, error)
+	ProcessAuthFunc   func(authURL string) error
+	FinalizeOrderFunc func(order *ACMEOrder, csr []byte) error
+	DownloadCertFunc  func(url string) ([]byte, error)
 }
 
 func (m *MockACMEClient) RequestOrder(domains []string) (*ACMEOrder, error) {
@@ -1230,4 +1230,3 @@ func TestEncodePrivateKey(t *testing.T) {
 		t.Error("Key PEM should be valid")
 	}
 }
-

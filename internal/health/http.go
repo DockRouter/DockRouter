@@ -47,8 +47,9 @@ func HTTPCheck(target, path string, timeout time.Duration) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	// Drain body to enable connection reuse
-	io.Copy(io.Discard, resp.Body)
+	// Drain body to enable connection reuse. A drain failure only costs us
+	// the reused connection, so it is deliberately ignored.
+	_, _ = io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 
 	return resp.StatusCode >= 200 && resp.StatusCode < 300, nil
