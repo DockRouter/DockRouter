@@ -76,15 +76,28 @@ func (wp *WebSocketProxy) ServeHTTP(w http.ResponseWriter, r *http.Request, targ
 		return err
 	}
 
-	// Copy data bidirectionally, waiting for both directions to complete
+	// Copy data bidirectionally. Whichever direction ends first closes both
+	// connections: without that the surviving goroutine blocks in Read until
+	// its peer happens to hang up, which for an idle WebSocket is never, and
+	// the goroutine plus both sockets leak for the lifetime of the process.
+	var once sync.Once
+	closeBoth := func() {
+		once.Do(func() {
+			clientConn.Close()
+			backendConn.Close()
+		})
+	}
+
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
+		defer closeBoth()
 		wp.copyData(clientConn, backendConn, "backend->client")
 	}()
 	go func() {
 		defer wg.Done()
+		defer closeBoth()
 		wp.copyData(backendConn, clientBuf, "client->backend")
 	}()
 	wg.Wait()
@@ -92,42 +105,112 @@ func (wp *WebSocketProxy) ServeHTTP(w http.ResponseWriter, r *http.Request, targ
 	return nil
 }
 
+// wsHandshakeHeaders are the handshake headers sendUpgradeRequest relays with
+// their conventional wire casing rather than the canonical form net/http
+// stores them under ("Sec-Websocket-Key"), which some stricter servers reject.
+var wsHandshakeHeaders = []string{
+	"Sec-WebSocket-Key",
+	"Sec-WebSocket-Version",
+	"Sec-WebSocket-Protocol",
+	"Sec-WebSocket-Extensions",
+	"Origin",
+}
+
+// wsSkipHeaders are the headers sendUpgradeRequest writes itself or must not
+// relay. Everything the client sent that is not listed here is forwarded
+// verbatim: an allowlist would silently drop Cookie, Authorization and every
+// application header, which breaks any backend that authenticates its
+// WebSocket endpoint.
+var wsSkipHeaders = map[string]bool{
+	"Host":       true, // written from r.Host
+	"Upgrade":    true, // rewritten below
+	"Connection": true, // hop-by-hop, rewritten below
+
+	// Hop-by-hop headers (RFC 7230 6.1) must not be forwarded.
+	"Keep-Alive":          true,
+	"Proxy-Authenticate":  true,
+	"Proxy-Authorization": true,
+	"Te":                  true,
+	"Trailer":             true,
+	"Transfer-Encoding":   true,
+
+	// Set from the real connection rather than relayed, so a client cannot
+	// spoof its own address.
+	"X-Forwarded-For":   true,
+	"X-Forwarded-Proto": true,
+	"X-Forwarded-Host":  true,
+	"X-Real-Ip":         true,
+}
+
+func init() {
+	// Written explicitly by the handshake block, so the generic loop skips them.
+	for _, h := range wsHandshakeHeaders {
+		wsSkipHeaders[http.CanonicalHeaderKey(h)] = true
+	}
+}
+
 func (wp *WebSocketProxy) sendUpgradeRequest(conn net.Conn, r *http.Request, target string) error {
 	// Build upgrade request
 	reqURI := r.URL.RequestURI()
-	req := fmt.Sprintf("GET %s HTTP/1.1\r\n", reqURI)
-	req += fmt.Sprintf("Host: %s\r\n", r.Host)
-	req += "Upgrade: websocket\r\n"
-	req += "Connection: Upgrade\r\n"
+	var req strings.Builder
+	fmt.Fprintf(&req, "GET %s HTTP/1.1\r\n", reqURI)
+	fmt.Fprintf(&req, "Host: %s\r\n", r.Host)
+	req.WriteString("Upgrade: websocket\r\n")
+	req.WriteString("Connection: Upgrade\r\n")
 
-	// WebSocket key
-	if key := r.Header.Get("Sec-WebSocket-Key"); key != "" {
-		req += fmt.Sprintf("Sec-WebSocket-Key: %s\r\n", key)
-	}
-	if version := r.Header.Get("Sec-WebSocket-Version"); version != "" {
-		req += fmt.Sprintf("Sec-WebSocket-Version: %s\r\n", version)
-	}
-	if proto := r.Header.Get("Sec-WebSocket-Protocol"); proto != "" {
-		req += fmt.Sprintf("Sec-WebSocket-Protocol: %s\r\n", proto)
-	}
-	if ext := r.Header.Get("Sec-WebSocket-Extensions"); ext != "" {
-		req += fmt.Sprintf("Sec-WebSocket-Extensions: %s\r\n", ext)
+	// A header value carrying CRLF would let a client inject extra request
+	// lines into the upstream connection.
+	writeHeader := func(name, value string) {
+		if strings.ContainsAny(value, "\r\n") {
+			return
+		}
+		fmt.Fprintf(&req, "%s: %s\r\n", name, value)
 	}
 
-	// Origin
-	if origin := r.Header.Get("Origin"); origin != "" {
-		req += fmt.Sprintf("Origin: %s\r\n", origin)
+	for _, name := range wsHandshakeHeaders {
+		if value := r.Header.Get(name); value != "" {
+			writeHeader(name, value)
+		}
 	}
 
-	req += "\r\n"
+	// Forward everything else the client sent: Cookie, Authorization and any
+	// application-specific header the backend needs to authorize the socket.
+	for name, values := range r.Header {
+		canonical := http.CanonicalHeaderKey(name)
+		if wsSkipHeaders[canonical] {
+			continue
+		}
+		for _, value := range values {
+			writeHeader(canonical, value)
+		}
+	}
 
-	_, err := conn.Write([]byte(req))
+	clientIP := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(clientIP); err == nil {
+		clientIP = host
+	}
+	if clientIP != "" {
+		writeHeader("X-Forwarded-For", clientIP)
+		writeHeader("X-Real-Ip", clientIP)
+	}
+	proto := "http"
+	if r.TLS != nil {
+		proto = "https"
+	}
+	writeHeader("X-Forwarded-Proto", proto)
+	writeHeader("X-Forwarded-Host", r.Host)
+
+	req.WriteString("\r\n")
+
+	_, err := conn.Write([]byte(req.String()))
 	return err
 }
 
 func (wp *WebSocketProxy) readBackendResponse(conn net.Conn) (string, error) {
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
-	defer conn.SetDeadline(time.Time{})
+	// A deadline that cannot be set is not fatal here: the read below still
+	// terminates when the backend closes the connection.
+	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	defer func() { _ = conn.SetDeadline(time.Time{}) }()
 
 	reader := bufio.NewReaderSize(conn, 4096)
 	var resp strings.Builder

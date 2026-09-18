@@ -13,8 +13,8 @@ func TestGetOrCreateRateLimiterDefault(t *testing.T) {
 
 	rl := b.getOrCreateRateLimiter("route1", RateLimitConfig{
 		Enabled: true,
-		Count:   0,    // zero — should default to 100
-		Window:  0,    // zero — should default to 1 minute
+		Count:   0, // zero — should default to 100
+		Window:  0, // zero — should default to 1 minute
 	})
 
 	if rl == nil {

@@ -32,6 +32,11 @@ type HealthCheck struct {
 	State      HealthState
 	ConsecFail int
 	ConsecPass int
+
+	// lastCheck is when this target was last probed. It is what makes
+	// per-target Interval values meaningful; the scheduler ticks faster than
+	// any individual check so each one can run on its own cadence.
+	lastCheck time.Time
 }
 
 // NewChecker creates a new health checker
@@ -93,9 +98,26 @@ func (c *Checker) Unregister(target string) {
 	delete(c.checks, target)
 }
 
-// Start begins the health check loop
+// scheduleResolution bounds how finely per-target intervals can be honoured.
+// The loop wakes at most this often; a target whose own interval is shorter is
+// effectively rounded up to it.
+const scheduleResolution = time.Second
+
+// Start begins the health check loop.
+//
+// The loop ticks on a fixed cadence and each registered target is probed when
+// its own Interval has elapsed, so `dr.healthcheck.interval` actually takes
+// effect. Targets that declare no interval fall back to the checker default.
 func (c *Checker) Start(ctx context.Context) {
-	ticker := time.NewTicker(c.interval)
+	tick := c.interval
+	if tick > scheduleResolution {
+		tick = scheduleResolution
+	}
+	if tick <= 0 {
+		tick = scheduleResolution
+	}
+
+	ticker := time.NewTicker(tick)
 	defer ticker.Stop()
 
 	for {
@@ -109,17 +131,29 @@ func (c *Checker) Start(ctx context.Context) {
 }
 
 func (c *Checker) checkAll() {
-	// Collect targets under read lock, then run checks without holding the lock
-	c.mu.RLock()
+	// Select the targets that are due, then run their checks without holding
+	// the lock. lastCheck is stamped here rather than in checkOne so a slow
+	// probe cannot be started twice by the next tick.
+	now := time.Now()
+
+	c.mu.Lock()
 	type checkTarget struct {
 		target string
 		check  *HealthCheck
 	}
 	targets := make([]checkTarget, 0, len(c.checks))
 	for target, check := range c.checks {
+		interval := check.Interval
+		if interval <= 0 {
+			interval = c.interval
+		}
+		if !check.lastCheck.IsZero() && now.Sub(check.lastCheck) < interval {
+			continue
+		}
+		check.lastCheck = now
 		targets = append(targets, checkTarget{target, check})
 	}
-	c.mu.RUnlock()
+	c.mu.Unlock()
 
 	for _, t := range targets {
 		go c.checkOne(t.target, t.check)

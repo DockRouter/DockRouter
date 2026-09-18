@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: DockRouter Admin API
   description: Admin API for DockRouter - Docker-native ingress router
-  version: 1.0.0
+  version: 1.2.1
   contact:
     name: DockRouter
     url: https://github.com/DockRouter/dockrouter
@@ -142,6 +142,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Config'
+
+  /api/v1/events:
+    get:
+      summary: Stream live events
+      description: |
+        Server-Sent Events stream of route, container and certificate changes.
+        The dashboard consumes it to refresh itself without polling.
+
+        The connection stays open; each change is delivered as a `data:` line
+        holding a JSON object with a `type` and a `data` field. A `: keepalive`
+        comment is emitted periodically so intermediaries do not close an idle
+        stream.
+      operationId: streamEvents
+      tags:
+        - System
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                example: |
+                  data: {"type":"route.added","data":{"host":"app.example.com","backend":"172.17.0.5:80"}}
+
+                  data: {"type":"container.stopped","data":{"id":"abc123def456"}}
+        '503':
+          description: The event hub is not available
 
 components:
   schemas:

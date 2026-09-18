@@ -60,10 +60,10 @@ func TestDeepCopyWithFullConfig(t *testing.T) {
 			Port:       8080,
 			TLSDomains: []string{"example.com", "www.example.com"},
 			CORS: CORSConfig{
-				Enabled:  true,
-				Origins:  []string{"https://example.com"},
-				Methods:  []string{"GET", "POST"},
-				Headers:  []string{"Content-Type"},
+				Enabled: true,
+				Origins: []string{"https://example.com"},
+				Methods: []string{"GET", "POST"},
+				Headers: []string{"Content-Type"},
 			},
 			BasicAuthUsers: []BasicAuthUser{
 				{Username: "admin", Hash: "$2a$10$abc"},

@@ -116,7 +116,7 @@ func (k *AccountKey) JWK() map[string]interface{} {
 	return map[string]interface{}{
 		"crv": "P-256",
 		"kty": "EC",
-		"x":   base64URLEncode(padBytes(k.key.PublicKey.X.Bytes(), 32)),
-		"y":   base64URLEncode(padBytes(k.key.PublicKey.Y.Bytes(), 32)),
+		"x":   base64URLEncode(padBytes(k.key.X.Bytes(), 32)),
+		"y":   base64URLEncode(padBytes(k.key.Y.Bytes(), 32)),
 	}
 }

@@ -21,7 +21,7 @@ func validateContainerID(id string) error {
 		return fmt.Errorf("empty container ID")
 	}
 	for _, c := range id {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
 			return fmt.Errorf("invalid container ID: %s", id)
 		}
 	}

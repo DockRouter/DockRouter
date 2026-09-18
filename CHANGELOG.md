@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-09-18
+
+A follow-up audit of the same kind that produced 1.2.0: features that the docs
+and the dashboard promise, but that did not actually happen at runtime. Each
+fix below ships with a regression test that fails without it.
+
+### Fixed
+
+- **The dashboard's live updates never worked.** `app.js` has always opened an
+  `EventSource` against `/api/v1/events`, but that route was never registered,
+  so every connection fell through to the dashboard catch-all, came back as
+  HTML with a 404, and the UI stayed frozen on whatever it fetched at page
+  load — retrying every five seconds forever. The endpoint now streams route,
+  container and certificate events from the SSE hub, which until now was
+  unreachable code
+- **The admin server's 10s `WriteTimeout` would have severed that stream.** It
+  is a wall-clock deadline for the whole exchange, so it is gone, as it already
+  was on the HTTP and HTTPS servers; `ReadHeaderTimeout` still bounds slow
+  request headers
+- **A listener that could not bind was logged and then ignored.** A second
+  instance, or any port conflict, left a process that logged "DockRouter ready",
+  answered the health probe, and served no traffic at all. A serving error is
+  now fatal: the process shuts down gracefully and exits non-zero
+- **`/ready` reported ready while Docker discovery was down.** `Start` set the
+  engine's running flag before the initial sync and never rolled it back on
+  failure, so `IsRunning` returned true for an engine that had never started and
+  would never learn about a route. An orchestrator would have sent traffic to it
+- **`dr.healthcheck.interval` was documented but ignored.** Every backend was
+  probed on the checker's single global tick regardless of the interval its
+  labels declared. Each target is now scheduled on its own interval, falling
+  back to the global default when it declares none
+- **WebSocket connections leaked a goroutine and two sockets each.** The proxy
+  waited for *both* copy directions to finish; when a client hung up, the
+  backend-to-client copy stayed blocked in `Read` until the backend happened to
+  close, which for an idle socket is never. Whichever direction ends first now
+  closes both connections
+- **The WebSocket upgrade dropped every client header outside a fixed
+  handshake allowlist**, including `Cookie` and `Authorization`, so any backend
+  that authenticates its WebSocket endpoint rejected the connection. Client
+  headers are now forwarded, minus hop-by-hop headers; `X-Forwarded-For`,
+  `X-Real-Ip`, `X-Forwarded-Proto` and `X-Forwarded-Host` are set from the real
+  connection so a client cannot spoof them, and a value carrying CRLF is
+  dropped rather than smuggled onto the upstream connection
+
+### Changed
+
+- `make lint` works again. `.golangci.yml` was still on the v1 schema, which
+  golangci-lint v2 refuses to load ("unsupported version of the configuration")
+  before inspecting a single file, and the Makefile installed from the v1 module
+  path. Both now track v2
+- An idle event stream emits a periodic keepalive comment and sets
+  `X-Accel-Buffering: no`, so a proxy in front of the dashboard neither buffers
+  events into bursts nor drops a quiet connection
+- `SSEHub.Stop` is idempotent, now that it sits on a shutdown path reachable
+  from both a signal and a fatal server error
+
+### Internal
+
+- Repository is clean under `gofmt -s` and reports zero `golangci-lint` issues
+- Coverage stays at 92% of statements, above the 80% CI gate
+
 ## [1.2.0] - 2026-07-29
 
 An end-to-end audit found that several documented features did not work at
@@ -176,7 +237,8 @@ production middleware chain.
 - No external dependencies (stdlib only)
 - Minimal attack surface with scratch-based Docker image
 
-[Unreleased]: https://github.com/DockRouter/dockrouter/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/DockRouter/dockrouter/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/DockRouter/dockrouter/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/DockRouter/dockrouter/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/DockRouter/dockrouter/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/DockRouter/dockrouter/releases/tag/v1.0.0

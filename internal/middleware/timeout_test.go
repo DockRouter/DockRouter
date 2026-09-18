@@ -12,7 +12,7 @@ func TestTimeout(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	timedHandler := Timeout(5*time.Second)(handler)
+	timedHandler := Timeout(5 * time.Second)(handler)
 
 	req := httptest.NewRequest("GET", "/test", nil)
 	rec := httptest.NewRecorder()
@@ -36,7 +36,7 @@ func TestTimeoutWithDeadline(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	timedHandler := Timeout(5*time.Second)(handler)
+	timedHandler := Timeout(5 * time.Second)(handler)
 
 	req := httptest.NewRequest("GET", "/test", nil)
 	rec := httptest.NewRecorder()
@@ -54,7 +54,7 @@ func TestTimeoutCanceledContext(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	timedHandler := Timeout(50*time.Millisecond)(handler)
+	timedHandler := Timeout(50 * time.Millisecond)(handler)
 
 	req := httptest.NewRequest("GET", "/test", nil)
 	rec := httptest.NewRecorder()

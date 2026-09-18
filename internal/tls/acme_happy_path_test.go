@@ -103,7 +103,7 @@ func TestProvisionCertificateHappyPath(t *testing.T) {
 	}
 
 	var (
-		mu       sync.Mutex
+		mu         sync.Mutex
 		signedCert []byte // PEM cert signed from CSR
 	)
 

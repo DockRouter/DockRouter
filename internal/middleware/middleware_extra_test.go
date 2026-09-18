@@ -327,8 +327,8 @@ func TestSecurityHeadersAll(t *testing.T) {
 	securityHandler.ServeHTTP(rec, req)
 
 	expectedHeaders := map[string]string{
-		"X-Content-Type-Options": "nosniff",
-		"X-Frame-Options":        "DENY",
+		"X-Content-Type-Options":  "nosniff",
+		"X-Frame-Options":         "DENY",
 		"Content-Security-Policy": "default-src 'self'",
 	}
 

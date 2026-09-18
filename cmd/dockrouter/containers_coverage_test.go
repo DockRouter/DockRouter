@@ -207,8 +207,8 @@ func TestHandleContainersWithNoDRLabels(t *testing.T) {
 // noopRouteSink is a route sink that does nothing (for testing).
 type noopRouteSink struct{}
 
-func (n *noopRouteSink) AddRoute(info *discovery.ContainerInfo)    {}
-func (n *noopRouteSink) RemoveRoute(containerID string)            {}
+func (n *noopRouteSink) AddRoute(info *discovery.ContainerInfo) {}
+func (n *noopRouteSink) RemoveRoute(containerID string)         {}
 
 // testDiscLogger is a logger for discovery tests.
 type testDiscLogger struct{}
@@ -252,9 +252,9 @@ func TestHandleContainersWithMixedLabels(t *testing.T) {
 		Address: "172.17.0.9:9090",
 		Healthy: true,
 		Labels: map[string]string{
-			"dr.enable":           "true",
-			"dr.host":             "mixed.example.com",
-			"com.docker.compose":  "test",
+			"dr.enable":            "true",
+			"dr.host":              "mixed.example.com",
+			"com.docker.compose":   "test",
 			"org.label-schema.vcs": "https://github.com/test",
 		},
 		Config: &discovery.RouteConfig{

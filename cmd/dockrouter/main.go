@@ -68,6 +68,7 @@ type App struct {
 	discoveryEngine   *discovery.Engine
 	metrics           *metrics.Collector
 	middlewareBuilder *router.RouteMiddlewareBuilder
+	events            *admin.SSEHub
 	startTime         time.Time
 
 	// TLS renewal
@@ -77,6 +78,23 @@ type App struct {
 	httpServer  *http.Server
 	httpsServer *http.Server
 	adminServer *http.Server
+
+	// serverErr carries a listener failure (a port already in use, say) out of
+	// the serving goroutines. Without it the process logged the error and then
+	// sat there advertising itself as ready while serving nothing.
+	serverErr chan error
+}
+
+// serveErr reports a fatal serving error without ever blocking the goroutine
+// that hit it. Only the first error matters: it brings the process down.
+func (a *App) serveErr(err error) {
+	if a.serverErr == nil {
+		return
+	}
+	select {
+	case a.serverErr <- err:
+	default:
+	}
 }
 
 func main() {
@@ -134,12 +152,20 @@ func main() {
 		"routes", app.routeTable.Count(),
 	)
 
-	// Wait for shutdown signal
+	// Wait for a shutdown signal, or for a server to fail. A listener that
+	// cannot bind is fatal: staying up would leave a process that answers the
+	// health probe while serving no traffic at all.
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
 
-	logger.Info("Shutting down...")
+	failed := false
+	select {
+	case <-sigChan:
+		logger.Info("Shutting down...")
+	case err := <-app.serverErr:
+		failed = true
+		logger.Error("Fatal server error, shutting down", "error", err)
+	}
 
 	// Cancel context first to stop discovery engine goroutines
 	cancel()
@@ -150,12 +176,19 @@ func main() {
 
 	app.shutdown(shutdownCtx)
 
+	if failed {
+		os.Exit(1)
+	}
+
 	logger.Info("Goodbye!")
 }
 
 func (a *App) initialize() error {
 	// Initialize metrics
 	a.metrics = metrics.NewCollector()
+
+	// Event hub backing the dashboard's live updates.
+	a.events = admin.NewSSEHub()
 
 	// Initialize route table
 	a.routeTable = router.NewTable()
@@ -226,6 +259,13 @@ func (a *App) initialize() error {
 }
 
 func (a *App) start(ctx context.Context) {
+	a.serverErr = make(chan error, 3)
+
+	// Fan out discovery and certificate events to the dashboard.
+	if a.events != nil {
+		go a.events.Run()
+	}
+
 	// Initialize middleware builder before launching any goroutines
 	a.middlewareBuilder = router.NewRouteMiddlewareBuilder()
 	if len(a.config.TrustedIPs) > 0 {
@@ -277,6 +317,7 @@ func (a *App) start(ctx context.Context) {
 		a.logger.Info("HTTP server listening", "port", a.config.HTTPPort)
 		if err := a.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			a.logger.Error("HTTP server error", "error", err)
+			a.serveErr(fmt.Errorf("http server: %w", err))
 		}
 	}()
 
@@ -298,6 +339,7 @@ func (a *App) start(ctx context.Context) {
 			a.logger.Info("HTTPS server listening", "port", a.config.HTTPSPort)
 			if err := a.httpsServer.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
 				a.logger.Error("HTTPS server error", "error", err)
+				a.serveErr(fmt.Errorf("https server: %w", err))
 			}
 		}()
 	}
@@ -308,17 +350,22 @@ func (a *App) start(ctx context.Context) {
 		adminAddr := fmt.Sprintf("%s:%d", a.config.AdminBind, a.config.AdminPort)
 
 		a.adminServer = &http.Server{
-			Addr:           adminAddr,
-			Handler:        adminHandler,
-			ReadTimeout:    10 * time.Second,
-			WriteTimeout:   10 * time.Second,
-			MaxHeaderBytes: 1 << 20, // 1MB
+			Addr:    adminAddr,
+			Handler: adminHandler,
+			// No WriteTimeout: it is a wall-clock deadline for the whole
+			// exchange and would sever the /api/v1/events stream that the
+			// dashboard keeps open. The header deadline still bounds
+			// slow-loris style attacks.
+			ReadHeaderTimeout: 10 * time.Second,
+			IdleTimeout:       120 * time.Second,
+			MaxHeaderBytes:    1 << 20, // 1MB
 		}
 
 		go func() {
 			a.logger.Info("Admin server listening", "addr", adminAddr)
 			if err := a.adminServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				a.logger.Error("Admin server error", "error", err)
+				a.serveErr(fmt.Errorf("admin server: %w", err))
 			}
 		}()
 	}
@@ -352,6 +399,12 @@ func (a *App) shutdown(ctx context.Context) {
 		} else {
 			a.logger.Info("Admin server stopped")
 		}
+	}
+
+	// Stop the event hub last so dashboards keep receiving shutdown-time
+	// events until their connections are actually torn down.
+	if a.events != nil {
+		a.events.Stop()
 	}
 
 	a.logger.Info("All servers stopped")
@@ -445,6 +498,7 @@ func (a *App) buildAdminHandler() http.Handler {
 	mux.HandleFunc("/api/v1/health", a.handleHealth)
 	mux.HandleFunc("/api/v1/metrics", a.handleMetrics)
 	mux.HandleFunc("/api/v1/config", a.handleConfig)
+	mux.HandleFunc("/api/v1/events", a.handleEvents)
 
 	// Top-level monitoring endpoints. Probes and Prometheus scrapers expect
 	// these paths, not the versioned API ones.
@@ -698,6 +752,27 @@ func (a *App) handleConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleEvents streams discovery and certificate events to the dashboard. The
+// dashboard has always opened this stream; until it was registered here every
+// connection got the dashboard HTML back as a 404 and live updates never
+// worked, leaving the UI stuck on whatever it fetched at page load.
+func (a *App) handleEvents(w http.ResponseWriter, r *http.Request) {
+	if a.events == nil {
+		http.Error(w, "Events unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	a.events.Handler().ServeHTTP(w, r)
+}
+
+// publishEvent broadcasts an event to connected dashboards. It is a no-op when
+// the hub is not running, so the callers do not have to guard every call.
+func (a *App) publishEvent(eventType string, data interface{}) {
+	if a.events == nil {
+		return
+	}
+	a.events.Send(admin.Event{Type: eventType, Data: data})
+}
+
 func (a *App) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -812,14 +887,20 @@ func (s *appRouteSink) AddRoute(info *discovery.ContainerInfo) {
 				// Trigger certificate provisioning, covering any extra SAN
 				// domains declared with dr.tls.domains.
 				sans := append([]string(nil), info.Config.TLSDomains...)
+				domain := info.Config.Host
 				go func() {
-					if err := s.app.tlsManager.EnsureCertificate(info.Config.Host, sans...); err != nil {
+					if err := s.app.tlsManager.EnsureCertificate(domain, sans...); err != nil {
 						s.app.logger.Error("Failed to provision certificate",
-							"domain", info.Config.Host,
+							"domain", domain,
 							"sans", sans,
 							"error", err,
 						)
+						return
 					}
+					s.app.publishEvent("certificate.issued", map[string]interface{}{
+						"domain": domain,
+						"sans":   sans,
+					})
 				}()
 
 			case "manual":
@@ -834,7 +915,11 @@ func (s *appRouteSink) AddRoute(info *discovery.ContainerInfo) {
 							"domain", domain,
 							"error", err,
 						)
+						continue
 					}
+					s.app.publishEvent("certificate.issued", map[string]interface{}{
+						"domain": domain,
+					})
 				}
 			}
 		}
@@ -862,6 +947,19 @@ func (s *appRouteSink) AddRoute(info *discovery.ContainerInfo) {
 		"host", info.Config.Host,
 		"address", info.Address,
 	)
+
+	s.app.publishEvent("route.added", map[string]interface{}{
+		"id":        truncateID(route.ID),
+		"host":      info.Config.Host,
+		"path":      info.Config.Path,
+		"backend":   info.Address,
+		"container": info.Name,
+	})
+	s.app.publishEvent("container.started", map[string]interface{}{
+		"id":   truncateID(info.ID),
+		"name": info.Name,
+		"host": info.Config.Host,
+	})
 }
 
 func (s *appRouteSink) RemoveRoute(containerID string) {
@@ -875,6 +973,13 @@ func (s *appRouteSink) RemoveRoute(containerID string) {
 	}
 
 	s.app.logger.Info("Route removed", "container_id", truncateID(containerID))
+
+	s.app.publishEvent("route.removed", map[string]interface{}{
+		"container_id": truncateID(containerID),
+	})
+	s.app.publishEvent("container.stopped", map[string]interface{}{
+		"id": truncateID(containerID),
+	})
 }
 
 // staleHealthTargets returns health-check targets that no route serves anymore.

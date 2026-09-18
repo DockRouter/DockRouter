@@ -73,8 +73,13 @@ func (e *Engine) Start(ctx context.Context) error {
 	e.running = true
 	e.mu.Unlock()
 
-	// Initial sync
+	// Initial sync. A failure here means discovery never started, so the flag
+	// has to be rolled back: otherwise IsRunning keeps reporting true and the
+	// /ready probe advertises a router that has no way to learn about routes.
 	if err := e.Sync(ctx); err != nil {
+		e.mu.Lock()
+		e.running = false
+		e.mu.Unlock()
 		return err
 	}
 

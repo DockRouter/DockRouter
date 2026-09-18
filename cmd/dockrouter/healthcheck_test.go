@@ -60,10 +60,10 @@ func TestTruncateID(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"abc123def456", "abc123def456"}, // exactly 12
-		{"abc123def456789", "abc123def456"}, // longer than 12
-		{"abc", "abc"},                     // shorter than 12
-		{"", ""},                           // empty
+		{"abc123def456", "abc123def456"},         // exactly 12
+		{"abc123def456789", "abc123def456"},      // longer than 12
+		{"abc", "abc"},                           // shorter than 12
+		{"", ""},                                 // empty
 		{"12345678901234567890", "123456789012"}, // 20 chars
 	}
 

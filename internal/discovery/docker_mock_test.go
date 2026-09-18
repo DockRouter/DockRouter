@@ -474,19 +474,19 @@ func TestEngineRunningFlagConcurrent(t *testing.T) {
 func TestListNetworksSuccess(t *testing.T) {
 	networks := []Network{
 		{
-			ID:      "network1",
-			Name:    "bridge",
-			Driver:  "bridge",
-			Scope:   "local",
+			ID:     "network1",
+			Name:   "bridge",
+			Driver: "bridge",
+			Scope:  "local",
 			Subnets: []Subnet{
 				{Subnet: "172.17.0.0/16", Gateway: "172.17.0.1"},
 			},
 		},
 		{
-			ID:      "network2",
-			Name:    "dockrouter-net",
-			Driver:  "bridge",
-			Scope:   "local",
+			ID:     "network2",
+			Name:   "dockrouter-net",
+			Driver: "bridge",
+			Scope:  "local",
 			Subnets: []Subnet{
 				{Subnet: "172.18.0.0/16", Gateway: "172.18.0.1"},
 			},

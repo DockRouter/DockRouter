@@ -144,7 +144,7 @@ func TestProcessAuthorizationSuccess(t *testing.T) {
 		w.Header().Set("Replay-Nonce", "test-nonce")
 		if strings.Contains(r.URL.Path, "/authz/") {
 			json.NewEncoder(w).Encode(ACMEAuthorization{
-				Status: "pending",
+				Status:     "pending",
 				Identifier: Identifier{Type: "dns", Value: "test.com"},
 				Challenges: []Challenge{
 					{
@@ -196,7 +196,7 @@ func TestProcessAuthorizationInvalidChallenge(t *testing.T) {
 		w.Header().Set("Replay-Nonce", "test-nonce")
 		if strings.Contains(r.URL.Path, "/authz/") {
 			json.NewEncoder(w).Encode(ACMEAuthorization{
-				Status: "pending",
+				Status:     "pending",
 				Identifier: Identifier{Type: "dns", Value: "test.com"},
 				Challenges: []Challenge{
 					{

@@ -102,6 +102,19 @@ func TestEngineStartSyncError(t *testing.T) {
 	if err == nil {
 		t.Fatal("Start should fail when Sync fails")
 	}
+
+	// A failed Start must not leave the engine claiming to be running: the
+	// /ready probe reads IsRunning and would advertise a router that has no
+	// way to discover any routes.
+	if engine.IsRunning() {
+		t.Error("IsRunning() = true after a failed Start, want false")
+	}
+
+	// And a later Start must still be able to succeed rather than short-circuit
+	// on the stale flag.
+	if err := engine.Start(ctx); err == nil {
+		t.Error("second Start should have reported the same sync failure")
+	}
 }
 
 // TestIntToStrNegative tests the negative number path in intToStr.

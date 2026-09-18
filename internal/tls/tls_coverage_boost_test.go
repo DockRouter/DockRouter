@@ -1056,4 +1056,3 @@ func TestACMEClientPollOrderError(t *testing.T) {
 		t.Error("PollOrder should fail with invalid URL")
 	}
 }
-

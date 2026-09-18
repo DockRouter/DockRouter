@@ -29,9 +29,9 @@ func TestGetContainerIPMultipleNetworksPriority(t *testing.T) {
 	detail := &ContainerDetail{
 		Network: ContainerNetwork{
 			Networks: map[string]NetworkInfo{
-				"other1":   {IPAddress: "10.0.0.5"},
-				"bridge":   {IPAddress: "172.17.0.5"},
-				"other2":   {IPAddress: "192.168.0.5"},
+				"other1": {IPAddress: "10.0.0.5"},
+				"bridge": {IPAddress: "172.17.0.5"},
+				"other2": {IPAddress: "192.168.0.5"},
 			},
 		},
 	}
@@ -101,7 +101,7 @@ func TestGetContainerIPNoNetworks(t *testing.T) {
 	// When no networks exist, should return empty string
 	detail := &ContainerDetail{
 		Network: ContainerNetwork{
-			Networks: map[string]NetworkInfo{},
+			Networks:  map[string]NetworkInfo{},
 			IPAddress: "172.17.0.100",
 		},
 	}
@@ -353,8 +353,8 @@ func TestEventActorWithAttributes(t *testing.T) {
 	actor := EventActor{
 		ID: "container123",
 		Attributes: map[string]string{
-			"name":  "my-container",
-			"image": "nginx:latest",
+			"name":      "my-container",
+			"image":     "nginx:latest",
 			"dr.enable": "true",
 		},
 	}

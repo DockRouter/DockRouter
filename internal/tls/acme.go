@@ -494,8 +494,8 @@ func (c *ACMEClient) jwk() map[string]interface{} {
 	return map[string]interface{}{
 		"crv": "P-256",
 		"kty": "EC",
-		"x":   base64URLEncode(padBytes(c.privateKey.PublicKey.X.Bytes(), 32)),
-		"y":   base64URLEncode(padBytes(c.privateKey.PublicKey.Y.Bytes(), 32)),
+		"x":   base64URLEncode(padBytes(c.privateKey.X.Bytes(), 32)),
+		"y":   base64URLEncode(padBytes(c.privateKey.Y.Bytes(), 32)),
 	}
 }
 

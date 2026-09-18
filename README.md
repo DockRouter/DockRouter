@@ -364,6 +364,10 @@ curl http://localhost:9090/api/v1/config
 
 # Get metrics
 curl http://localhost:9090/api/v1/metrics
+
+# Stream live route, container and certificate events (Server-Sent Events).
+# This is what the dashboard uses to refresh itself without polling.
+curl -N http://localhost:9090/api/v1/events
 ```
 
 ---
